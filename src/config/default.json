@@ -1,0 +1,92 @@
+{
+  "app": {
+    "name": "IoT Middleware Pro",
+    "version": "2.0.0"
+  },
+  "mqtt": {
+    "brokerUrl": "mqtt://localhost:1883",
+    "options": {
+      "clientId": "iot-middleware-pro",
+      "clean": true,
+      "connectTimeout": 30000,
+      "reconnectPeriod": 5000
+    },
+    "topics": {
+      "v5008": "V5008Upload/+/#",
+      "v6800": "V6800Upload/+/#"
+    },
+    "downloadTopic": "V6800Download"
+  },
+  "database": {
+    "client": "mysql2",
+    "connection": {
+      "host": "localhost",
+      "port": 3306,
+      "user": "root",
+      "password": "",
+      "database": "iot_middleware"
+    }
+  },
+  "modules": {
+    "storage": {
+      "enabled": true,
+      "batchSize": 100,
+      "flushInterval": 1000,
+      "filters": []
+    },
+    "webhook": {
+      "enabled": false,
+      "url": "http://example.com/webhook",
+      "filters": ["RFID_EVENT", "DOOR_STATE", "META_CHANGED_EVENT"]
+    },
+    "mqttRelay": {
+      "enabled": false,
+      "topic": "IoTOutput",
+      "filters": []
+    },
+    "api": {
+      "enabled": true,
+      "port": 3000,
+      "host": "0.0.0.0"
+    },
+    "websocket": {
+      "enabled": true,
+      "port": 3001
+    },
+    "normalizer": {
+      "cacheType": "memory",
+      "heartbeatTimeout": 120000,
+      "checkInterval": 30000
+    },
+    "command": {
+      "enabled": true
+    },
+    "mqttSubscriber": {
+      "enabled": true
+    },
+    "parserManager": {
+      "enabled": true
+    }
+  },
+  "normalizer": {
+    "cacheType": "memory",
+    "heartbeatTimeout": 120000,
+    "checkInterval": 30000
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "transports": {
+      "console": {
+        "enabled": true,
+        "colorize": true
+      },
+      "file": {
+        "enabled": true,
+        "filename": "logs/app.log",
+        "maxsize": 10485760,
+        "maxFiles": 5
+      }
+    }
+  }
+}
