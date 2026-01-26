@@ -122,6 +122,6 @@ CREATE TABLE IF NOT EXISTS iot_topchange_event (
     device_type  CHAR(5) NOT NULL,
     event_desc   VARCHAR(512) NOT NULL, -- The human readable change string
     parse_at     DATETIME(3) NOT NULL,
-    update_at    DATETIME(3) DEFAULT TIMESTAMP(3),
+    update_at    DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     INDEX idx_top_chng (device_id, parse_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

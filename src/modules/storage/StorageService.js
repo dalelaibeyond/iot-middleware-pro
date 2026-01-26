@@ -121,9 +121,14 @@ class StorageService {
   handleHeartbeat(suo) {
     const { deviceId, payload } = suo;
 
-    // Update cache
+    // Update cache with module details
     payload.forEach((item) => {
-      StateCache.updateHeartbeat(deviceId, item.moduleIndex);
+      StateCache.updateHeartbeat(
+        deviceId,
+        item.moduleIndex,
+        item.moduleId,
+        item.uTotal
+      );
     });
 
     // Buffer for storage
@@ -221,9 +226,11 @@ class StorageService {
       }
       const moduleData = byModule.get(key);
 
-      // Pivot: map noiseIndex to noise_indexXX
-      if (item.noiseIndex >= 16 && item.noiseIndex <= 18) {
-        moduleData[`noise_index${item.noiseIndex}`] = item.noiseLevel;
+      // Pivot: map sensorIndex to noise_indexXX (indices 16-18)
+      // Note: Do not insert NULL explicitly for missing indices;
+      // let the Database default handle missing columns
+      if (item.sensorIndex >= 16 && item.sensorIndex <= 18) {
+        moduleData[`noise_index${item.sensorIndex}`] = item.noiseLevel;
       }
     });
 

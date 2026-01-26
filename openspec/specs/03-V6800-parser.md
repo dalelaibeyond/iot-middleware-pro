@@ -1,10 +1,13 @@
-# V6800Parser Implementation Guide v1.5
+# V6800Parser Implementation Guide v1.0
 
 **File Name:** `V6800Parser_Spec.md`
 
-**Date:** 1/22/2026
+**Date:** 1/26/2026
+
 **Type:** Component Specification
+
 **Scope:** JSON to SIF (Standard Intermediate Format) Conversion
+
 **Status:** Final
 
 ---
@@ -24,14 +27,14 @@
 ## 2. SIF Standard Contract (Global Rules)
 
 1. **The Envelope (Mandatory):**
-Every SIF object returned by the parser **MUST** contain these root fields:
+ Every SIF object returned by the parser **MUST** contain these root fields:
     - `deviceType`: Fixed "V6800".
     - `deviceId`: String.
     - `messageType`: String (Unified Enum).
     - `messageId`: String.
     - `meta`: Object containing `{ "topic": string, "rawType": string }`.
 2. **Topology Context (Conditional):**
-If the message pertains to specific sensor data, the SIF **MUST** include `moduleIndex` and `moduleId` (if available in the raw message).
+ If the message pertains to specific sensor data, the SIF **MUST** include `moduleIndex` and `moduleId` (if available in the raw message).
 3. **Payload Structure:**
     - All list-based data **MUST** be contained in an array key named **`data`**.
 
@@ -319,3 +322,31 @@ V6800 supports both Single and Dual door sensors.
 }
 
 ```
+
+---
+
+## 6. Special Handling
+
+### 6.1 Unknown Message Type
+
+- **Given:** A V6800 device sends a message with unknown `msg_type`
+- **When:** The parser receives the message
+- **Then:** It SHALL set `messageType="UNKNOWN"`, preserve the raw payload, and NOT throw an error
+
+### 6.2 Parse Error
+
+- **Given:** Invalid JSON is received
+- **When:** The parser attempts to parse
+- **Then:** It SHALL log the error, return `null`, and NOT throw an error
+
+### 6.3 Heart Beat with Gateway Module
+
+- **Given:** A `heart_beat_req` message with `module_type="mt_gw"`
+- **When:** The parser processes the message
+- **Then:** It SHALL use `module_sn` as `deviceId` instead of `gateway_sn`
+
+### 6.4 Module Field Aliases
+
+- **Given:** A message with `host_gateway_port_index` instead of `module_index`
+- **When:** The parser processes the message
+- **Then:** It SHALL map `host_gateway_port_index` to `moduleIndex` and handle `extend_module_sn` as alias for `moduleId`

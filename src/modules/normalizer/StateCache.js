@@ -2,7 +2,8 @@
  * StateCache - Dual-Purpose Cache for Logic and API
  *
  * Provides in-memory caching for:
- * - Device metadata
+ * - Device metadata (device:{id}:info)
+ * - Telemetry state (device:{id}:module:{index})
  * - RFID snapshots
  * - Module states
  * - Online/offline status
@@ -12,24 +13,18 @@
 
 class StateCache {
   constructor() {
-    // Device metadata cache: { deviceId: { ...metadata } }
+    // Device metadata cache: { "device:{id}:info": { ...metadata } }
     this.metadataCache = new Map();
 
-    // RFID snapshot cache: { deviceId: { moduleIndex: [ ...snapshot ] } }
-    this.rfidSnapshotCache = new Map();
+    // Telemetry cache: { "device:{id}:module:{index}": { ...telemetry } }
+    this.telemetryCache = new Map();
 
-    // Module state cache: { deviceId: { moduleIndex: { ...state } } }
-    this.moduleStateCache = new Map();
-
-    // Heartbeat timestamps: { deviceId: { moduleIndex: timestamp } }
+    // Heartbeat timestamps: { "device:{id}:module:{index}": timestamp }
     this.heartbeatCache = new Map();
-
-    // Online status: { deviceId: { moduleIndex: { isOnline, lastSeen } } }
-    this.onlineStatusCache = new Map();
   }
 
   /**
-   * Initialize the state cache
+   * Initialize state cache
    * @param {Object} config - Module configuration
    * @returns {Promise<void>}
    */
@@ -39,7 +34,7 @@ class StateCache {
   }
 
   /**
-   * Start the state cache
+   * Start state cache
    * @returns {Promise<void>}
    */
   async start() {
@@ -47,39 +42,89 @@ class StateCache {
   }
 
   /**
-   * Merge partial metadata into cache
+   * Merge partial metadata into cache with change detection
    * @param {string} deviceId - Device ID
-   * @param {Array} payload - Partial metadata payload
+   * @param {Object} incomingMetadata - Partial metadata from SIF
+   * @returns {Array} Array of change descriptions (empty if no changes)
    */
-  mergeMetadata(deviceId, payload) {
-    if (!this.metadataCache.has(deviceId)) {
-      this.metadataCache.set(deviceId, {});
+  mergeMetadata(deviceId, incomingMetadata) {
+    const cacheKey = `device:${deviceId}:info`;
+    const changes = [];
+
+    // Get or create cached metadata
+    let cached = this.metadataCache.get(cacheKey);
+    if (!cached) {
+      cached = {
+        deviceId,
+        deviceType: incomingMetadata.deviceType || null,
+        ip: null,
+        mac: null,
+        fwVer: null,
+        mask: null,
+        gwIp: null,
+        activeModules: [],
+        lastSeen_info: new Date().toISOString(),
+      };
     }
 
-    const cached = this.metadataCache.get(deviceId);
+    // Device-level change detection
+    if (incomingMetadata.ip && incomingMetadata.ip !== cached.ip) {
+      changes.push(`Device IP changed from ${cached.ip || 'null'} to ${incomingMetadata.ip}`);
+      cached.ip = incomingMetadata.ip;
+    }
 
-    // Merge payload into cached metadata
-    payload.forEach((item) => {
-      Object.assign(cached, item);
+    if (incomingMetadata.fwVer && incomingMetadata.fwVer !== cached.fwVer) {
+      changes.push(`Device Firmware changed from ${cached.fwVer || 'null'} to ${incomingMetadata.fwVer}`);
+      cached.fwVer = incomingMetadata.fwVer;
+    }
 
-      // Handle modules array
-      if (item.modules && Array.isArray(item.modules)) {
-        cached.modules = cached.modules || [];
-        item.modules.forEach((module) => {
-          const existingIndex = cached.modules.findIndex(
-            (m) => m.moduleIndex === module.moduleIndex,
-          );
-          if (existingIndex >= 0) {
-            Object.assign(cached.modules[existingIndex], module);
-          } else {
-            cached.modules.push(module);
+    if (incomingMetadata.mac) {
+      cached.mac = incomingMetadata.mac;
+    }
+    if (incomingMetadata.mask) {
+      cached.mask = incomingMetadata.mask;
+    }
+    if (incomingMetadata.gwIp) {
+      cached.gwIp = incomingMetadata.gwIp;
+    }
+
+    // Module-level change detection
+    if (incomingMetadata.activeModules && Array.isArray(incomingMetadata.activeModules)) {
+      const cachedModulesMap = new Map();
+      cached.activeModules.forEach((m) => cachedModulesMap.set(m.moduleIndex, m));
+
+      incomingMetadata.activeModules.forEach((incomingModule) => {
+        const cachedModule = cachedModulesMap.get(incomingModule.moduleIndex);
+
+        if (!cachedModule) {
+          // New module added
+          changes.push(`Module ${incomingModule.moduleId || incomingModule.moduleIndex} added at Index ${incomingModule.moduleIndex}`);
+          cached.activeModules.push({ ...incomingModule });
+        } else {
+          // Existing module - check for changes
+          if (incomingModule.moduleId && incomingModule.moduleId !== cachedModule.moduleId) {
+            changes.push(`Module ${cachedModule.moduleId} replaced with ${incomingModule.moduleId} at Index ${incomingModule.moduleIndex}`);
+            cachedModule.moduleId = incomingModule.moduleId;
           }
-        });
-      }
-    });
+          if (incomingModule.fwVer && incomingModule.fwVer !== cachedModule.fwVer) {
+            changes.push(`Module ${incomingModule.moduleId || incomingModule.moduleIndex} Firmware changed from ${cachedModule.fwVer || 'null'} to ${incomingModule.fwVer}`);
+            cachedModule.fwVer = incomingModule.fwVer;
+          }
+          if (incomingModule.uTotal !== undefined && incomingModule.uTotal !== cachedModule.uTotal) {
+            changes.push(`Module ${incomingModule.moduleId || incomingModule.moduleIndex} U-Total changed from ${cachedModule.uTotal || 'null'} to ${incomingModule.uTotal}`);
+            cachedModule.uTotal = incomingModule.uTotal;
+          }
+        }
+      });
+    }
 
     // Update timestamp
-    cached.update_at = new Date();
+    cached.lastSeen_info = new Date().toISOString();
+
+    // Save to cache
+    this.metadataCache.set(cacheKey, cached);
+
+    return changes;
   }
 
   /**
@@ -88,86 +133,121 @@ class StateCache {
    * @returns {Object|null} Cached metadata or null
    */
   getMetadata(deviceId) {
-    return this.metadataCache.get(deviceId) || null;
+    const cacheKey = `device:${deviceId}:info`;
+    return this.metadataCache.get(cacheKey) || null;
   }
 
   /**
-   * Set RFID snapshot in cache
+   * Get telemetry state for a module
    * @param {string} deviceId - Device ID
    * @param {number} moduleIndex - Module index
-   * @param {Array} snapshot - RFID snapshot array
+   * @returns {Object|null} Telemetry state or null
    */
-  setRfidSnapshot(deviceId, moduleIndex, snapshot) {
-    if (!this.rfidSnapshotCache.has(deviceId)) {
-      this.rfidSnapshotCache.set(deviceId, {});
+  getTelemetry(deviceId, moduleIndex) {
+    const cacheKey = `device:${deviceId}:module:${moduleIndex}`;
+    return this.telemetryCache.get(cacheKey) || null;
+  }
+
+  /**
+   * Set telemetry state for a module
+   * @param {string} deviceId - Device ID
+   * @param {number} moduleIndex - Module index
+   * @param {Object} telemetry - Telemetry state
+   */
+  setTelemetry(deviceId, moduleIndex, telemetry) {
+    const cacheKey = `device:${deviceId}:module:${moduleIndex}`;
+    this.telemetryCache.set(cacheKey, telemetry);
+  }
+
+  /**
+   * Update telemetry field with timestamp
+   * @param {string} deviceId - Device ID
+   * @param {number} moduleIndex - Module index
+   * @param {string} field - Field name (temp_hum, noise_level, rfid_snapshot, doorState)
+   * @param {*} value - Field value
+   * @param {string} timestampField - Timestamp field name (lastSeen_th, lastSeen_ns, etc.)
+   */
+  updateTelemetryField(deviceId, moduleIndex, field, value, timestampField) {
+    const cacheKey = `device:${deviceId}:module:${moduleIndex}`;
+    let telemetry = this.telemetryCache.get(cacheKey);
+
+    if (!telemetry) {
+      telemetry = {
+        deviceId,
+        deviceType: null,
+        moduleIndex,
+        moduleId: null,
+        isOnline: false,
+        lastSeen_hb: null,
+        temp_hum: [],
+        lastSeen_th: null,
+        noise_level: [],
+        lastSeen_ns: null,
+        rfid_snapshot: [],
+        lastSeen_rfid: null,
+        doorState: null,
+        door1State: null,
+        door2State: null,
+        lastSeen_door: null,
+      };
     }
 
-    const deviceSnapshots = this.rfidSnapshotCache.get(deviceId);
-    deviceSnapshots[moduleIndex] = snapshot;
+    telemetry[field] = value;
+    telemetry[timestampField] = new Date().toISOString();
+
+    this.telemetryCache.set(cacheKey, telemetry);
   }
 
   /**
    * Get RFID snapshot from cache
    * @param {string} deviceId - Device ID
    * @param {number} moduleIndex - Module index
-   * @returns {Array|null} Cached snapshot or null
+   * @returns {Array} Cached snapshot (empty array if not found)
    */
   getRfidSnapshot(deviceId, moduleIndex) {
-    const deviceSnapshots = this.rfidSnapshotCache.get(deviceId);
-    if (deviceSnapshots && deviceSnapshots[moduleIndex]) {
-      return deviceSnapshots[moduleIndex];
-    }
-    return null;
+    const telemetry = this.getTelemetry(deviceId, moduleIndex);
+    return telemetry ? telemetry.rfid_snapshot || [] : [];
   }
 
   /**
-   * Update module state
+   * Update heartbeat timestamp and online status
    * @param {string} deviceId - Device ID
    * @param {number} moduleIndex - Module index
-   * @param {Object} state - Module state
+   * @param {string} moduleId - Module ID
+   * @param {number} uTotal - Total U count
    */
-  updateModuleState(deviceId, moduleIndex, state) {
-    if (!this.moduleStateCache.has(deviceId)) {
-      this.moduleStateCache.set(deviceId, {});
+  updateHeartbeat(deviceId, moduleIndex, moduleId, uTotal) {
+    const cacheKey = `device:${deviceId}:module:${moduleIndex}`;
+    let telemetry = this.telemetryCache.get(cacheKey);
+
+    if (!telemetry) {
+      telemetry = {
+        deviceId,
+        deviceType: null,
+        moduleIndex,
+        moduleId,
+        isOnline: true,
+        lastSeen_hb: new Date().toISOString(),
+        temp_hum: [],
+        lastSeen_th: null,
+        noise_level: [],
+        lastSeen_ns: null,
+        rfid_snapshot: [],
+        lastSeen_rfid: null,
+        doorState: null,
+        door1State: null,
+        door2State: null,
+        lastSeen_door: null,
+      };
+    } else {
+      telemetry.isOnline = true;
+      telemetry.lastSeen_hb = new Date().toISOString();
+      if (moduleId) telemetry.moduleId = moduleId;
+      if (uTotal !== undefined) telemetry.uTotal = uTotal;
     }
 
-    const deviceStates = this.moduleStateCache.get(deviceId);
-    deviceStates[moduleIndex] = {
-      ...deviceStates[moduleIndex],
-      ...state,
-      timestamp: new Date(),
-    };
-  }
-
-  /**
-   * Get module state
-   * @param {string} deviceId - Device ID
-   * @param {number} moduleIndex - Module index
-   * @returns {Object|null} Module state or null
-   */
-  getModuleState(deviceId, moduleIndex) {
-    const deviceStates = this.moduleStateCache.get(deviceId);
-    if (deviceStates && deviceStates[moduleIndex]) {
-      return deviceStates[moduleIndex];
-    }
-    return null;
-  }
-
-  /**
-   * Update heartbeat timestamp
-   * @param {string} deviceId - Device ID
-   * @param {number} moduleIndex - Module index
-   */
-  updateHeartbeat(deviceId, moduleIndex) {
-    if (!this.heartbeatCache.has(deviceId)) {
-      this.heartbeatCache.set(deviceId, {});
-    }
-
-    const deviceHeartbeats = this.heartbeatCache.get(deviceId);
-    deviceHeartbeats[moduleIndex] = new Date();
-
-    // Update online status
-    this.updateOnlineStatus(deviceId, moduleIndex, true);
+    this.telemetryCache.set(cacheKey, telemetry);
+    this.heartbeatCache.set(cacheKey, new Date());
   }
 
   /**
@@ -177,59 +257,23 @@ class StateCache {
    * @returns {Date|null} Last heartbeat timestamp or null
    */
   getLastHeartbeat(deviceId, moduleIndex) {
-    const deviceHeartbeats = this.heartbeatCache.get(deviceId);
-    if (deviceHeartbeats && deviceHeartbeats[moduleIndex]) {
-      return deviceHeartbeats[moduleIndex];
-    }
-    return null;
-  }
-
-  /**
-   * Update online status
-   * @param {string} deviceId - Device ID
-   * @param {number} moduleIndex - Module index
-   * @param {boolean} isOnline - Online status
-   */
-  updateOnlineStatus(deviceId, moduleIndex, isOnline) {
-    if (!this.onlineStatusCache.has(deviceId)) {
-      this.onlineStatusCache.set(deviceId, {});
-    }
-
-    const deviceStatus = this.onlineStatusCache.get(deviceId);
-    deviceStatus[moduleIndex] = {
-      isOnline,
-      lastSeen: new Date(),
-    };
-  }
-
-  /**
-   * Get online status
-   * @param {string} deviceId - Device ID
-   * @param {number} moduleIndex - Module index
-   * @returns {Object|null} Online status or null
-   */
-  getOnlineStatus(deviceId, moduleIndex) {
-    const deviceStatus = this.onlineStatusCache.get(deviceId);
-    if (deviceStatus && deviceStatus[moduleIndex]) {
-      return deviceStatus[moduleIndex];
-    }
-    return null;
+    const cacheKey = `device:${deviceId}:module:${moduleIndex}`;
+    return this.heartbeatCache.get(cacheKey) || null;
   }
 
   /**
    * Get all modules for a device
    * @param {string} deviceId - Device ID
-   * @returns {Array} Array of module states
+   * @returns {Array} Array of telemetry states
    */
   getAllModules(deviceId) {
-    const deviceStates = this.moduleStateCache.get(deviceId);
-    if (deviceStates) {
-      return Object.entries(deviceStates).map(([moduleIndex, state]) => ({
-        moduleIndex: parseInt(moduleIndex),
-        ...state,
-      }));
+    const modules = [];
+    for (const [key, telemetry] of this.telemetryCache.entries()) {
+      if (key.startsWith(`device:${deviceId}:module:`)) {
+        modules.push(telemetry);
+      }
     }
-    return [];
+    return modules;
   }
 
   /**
@@ -237,11 +281,20 @@ class StateCache {
    * @param {string} deviceId - Device ID
    */
   clearDevice(deviceId) {
-    this.metadataCache.delete(deviceId);
-    this.rfidSnapshotCache.delete(deviceId);
-    this.moduleStateCache.delete(deviceId);
-    this.heartbeatCache.delete(deviceId);
-    this.onlineStatusCache.delete(deviceId);
+    const infoKey = `device:${deviceId}:info`;
+    this.metadataCache.delete(infoKey);
+
+    for (const [key] of this.telemetryCache.keys()) {
+      if (key.startsWith(`device:${deviceId}:module:`)) {
+        this.telemetryCache.delete(key);
+      }
+    }
+
+    for (const [key] of this.heartbeatCache.keys()) {
+      if (key.startsWith(`device:${deviceId}:module:`)) {
+        this.heartbeatCache.delete(key);
+      }
+    }
   }
 
   /**
@@ -251,15 +304,21 @@ class StateCache {
   getStats() {
     return {
       metadataCount: this.metadataCache.size,
-      rfidSnapshotCount: this.rfidSnapshotCache.size,
-      moduleStateCount: this.moduleStateCache.size,
+      telemetryCount: this.telemetryCache.size,
       heartbeatCount: this.heartbeatCache.size,
-      onlineStatusCount: this.onlineStatusCache.size,
     };
   }
 
   /**
-   * Stop the state cache
+   * Get heartbeat cache (for CacheWatchdog)
+   * @returns {Map} Heartbeat cache
+   */
+  getHeartbeatCache() {
+    return this.heartbeatCache;
+  }
+
+  /**
+   * Stop state cache
    * @returns {Promise<void>}
    */
   async stop() {
@@ -267,10 +326,8 @@ class StateCache {
 
     // Clear all caches
     this.metadataCache.clear();
-    this.rfidSnapshotCache.clear();
-    this.moduleStateCache.clear();
+    this.telemetryCache.clear();
     this.heartbeatCache.clear();
-    this.onlineStatusCache.clear();
 
     console.log("StateCache stopped");
   }

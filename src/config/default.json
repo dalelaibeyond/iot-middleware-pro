@@ -23,11 +23,17 @@
       "host": "localhost",
       "port": 3306,
       "user": "root",
-      "password": "",
+      "password": "Abc#!Dale123",
       "database": "iot_middleware"
     }
   },
   "modules": {
+    "database": {
+      "enabled": true
+    },
+    "eventBus": {
+      "enabled": true
+    },
     "storage": {
       "enabled": true,
       "batchSize": 100,
@@ -44,15 +50,6 @@
       "topic": "IoTOutput",
       "filters": []
     },
-    "api": {
-      "enabled": true,
-      "port": 3000,
-      "host": "0.0.0.0"
-    },
-    "websocket": {
-      "enabled": true,
-      "port": 3001
-    },
     "normalizer": {
       "cacheType": "memory",
       "heartbeatTimeout": 120000,
@@ -66,6 +63,21 @@
     },
     "parserManager": {
       "enabled": true
+    },
+    "stateCache": {
+      "enabled": true
+    },
+    "cacheWatchdog": {
+      "enabled": true
+    },
+    "apiServer": {
+      "enabled": true,
+      "port": 3000,
+      "host": "0.0.0.0"
+    },
+    "webSocketServer": {
+      "enabled": true,
+      "port": 3001
     }
   },
   "normalizer": {

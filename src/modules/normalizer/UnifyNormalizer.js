@@ -15,7 +15,7 @@ class UnifyNormalizer {
   }
 
   /**
-   * Initialize the normalizer
+   * Initialize normalizer
    * @param {Object} config - Module configuration
    * @returns {Promise<void>}
    */
@@ -43,24 +43,45 @@ class UnifyNormalizer {
    */
   normalize(sif) {
     try {
-      const { meta, deviceType, messageType, data } = sif;
-
-      // Determine structure type (Single-Module V5008 or Multi-Module V6800)
-      const isMultiModule = deviceType === "V6800";
-
-      // Generate unique message ID
-      const messageId = `${meta.deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Normalize message type to unified enum
-      const unifiedMessageType = this.getUnifiedMessageType(messageType);
+      const { deviceId, deviceType, messageType, messageId } = sif;
 
       // Process based on message type
-      if (isMultiModule) {
-        // Multi-module processing (V6800)
-        this.normalizeMultiModule(sif, unifiedMessageType, messageId);
-      } else {
-        // Single-module processing (V5008)
-        this.normalizeSingleModule(sif, unifiedMessageType, messageId);
+      switch (messageType) {
+        case "HEARTBEAT":
+          this.handleHeartbeat(sif);
+          break;
+        case "RFID_SNAPSHOT":
+          this.handleRfidSnapshot(sif);
+          break;
+        case "RFID_EVENT":
+          this.handleRfidEvent(sif);
+          break;
+        case "TEMP_HUM":
+          this.handleTempHum(sif);
+          break;
+        case "NOISE_LEVEL":
+          this.handleNoiseLevel(sif);
+          break;
+        case "DOOR_STATE":
+          this.handleDoorState(sif);
+          break;
+        case "DEVICE_INFO":
+        case "MODULE_INFO":
+        case "DEV_MOD_INFO":
+        case "DEVICE_METADATA":
+          this.handleMetadata(sif);
+          break;
+        case "UTOTAL_CHANGED":
+          this.handleUtotalChanged(sif);
+          break;
+        case "QRY_CLR_RESP":
+        case "SET_CLR_RESP":
+        case "CLN_ALM_RESP":
+          this.handleCommandResponses(sif);
+          break;
+        default:
+          console.warn(`Unknown message type: ${messageType}`);
+          break;
       }
     } catch (error) {
       console.error(`UnifyNormalizer error:`, error.message);
@@ -69,156 +90,382 @@ class UnifyNormalizer {
   }
 
   /**
-   * Normalize single-module (V5008) message
+   * Handle HEARTBEAT message
    * @param {Object} sif - Standard Intermediate Format
-   * @param {string} unifiedMessageType - Unified message type
-   * @param {string} messageId - Unique message ID
    */
-  normalizeSingleModule(sif, unifiedMessageType, messageId) {
-    const { meta, data } = sif;
+  handleHeartbeat(sif) {
+    const { deviceId, deviceType, messageId, data } = sif;
 
-    // Standardize field names and inject timestamps
-    const normalizedPayload = data.map((item) => ({
-      ...item,
-      moduleIndex: 1, // V5008 is single-module
-      sensorIndex: item.thIndex || item.noiseIndex || item.sensorIndex || 0,
-      timestamp: new Date(),
-    }));
+    // Filter out invalid slots where moduleId == 0 (V5008)
+    const validModules = data.filter((m) => m.moduleId && m.moduleId !== "0");
 
-    // Create SUO
-    const suo = {
-      deviceId: meta.deviceId,
-      deviceType: meta.deviceType,
-      messageType: unifiedMessageType,
-      messageId: messageId,
-      payload: normalizedPayload,
+    // Update cache for each module
+    validModules.forEach((module) => {
+      this.stateCache.updateHeartbeat(deviceId, module.moduleIndex, module.moduleId, module.uTotal);
+    });
+
+    // Merge activeModules into metadata cache
+    const metadata = {
+      deviceType,
+      activeModules: validModules.map((m) => ({
+        moduleIndex: m.moduleIndex,
+        moduleId: m.moduleId,
+        fwVer: m.fwVer || null,
+        uTotal: m.uTotal,
+      })),
     };
+    this.stateCache.mergeMetadata(deviceId, metadata);
 
-    // Handle stateful message types
-    this.handleStatefulMessages(suo);
-
-    // Emit normalized data
-    eventBus.emitDataNormalized(suo);
+    // Emit DEVICE_METADATA SUO from cache
+    this.emitDeviceMetadata(sif);
   }
 
   /**
-   * Normalize multi-module (V6800) message
+   * Handle RFID_SNAPSHOT with global diffing
    * @param {Object} sif - Standard Intermediate Format
-   * @param {string} unifiedMessageType - Unified message type
-   * @param {string} messageId - Unique message ID
    */
-  normalizeMultiModule(sif, unifiedMessageType, messageId) {
-    const { meta, data } = sif;
+  handleRfidSnapshot(sif) {
+    const { deviceId, deviceType, messageId, data } = sif;
 
-    // V6800 data is already organized by module
-    // Standardize field names
-    const normalizedPayload = data.map((item) => ({
-      ...item,
-      timestamp: new Date(),
-    }));
+    // Process each module
+    data.forEach((moduleData) => {
+      const { moduleIndex, moduleId, data: rfidData } = moduleData;
 
-    // Create SUO
-    const suo = {
-      deviceId: meta.deviceId,
-      deviceType: meta.deviceType,
-      messageType: unifiedMessageType,
-      messageId: messageId,
-      payload: normalizedPayload,
-    };
+      // Get previous snapshot from cache
+      const previousSnapshot = this.stateCache.getRfidSnapshot(deviceId, moduleIndex);
 
-    // Handle stateful message types
-    this.handleStatefulMessages(suo);
+      // Normalize current snapshot (map uIndex to sensorIndex)
+      const currentSnapshot = rfidData.map((item) => ({
+        moduleIndex,
+        moduleId,
+        sensorIndex: item.uIndex || item.sensorIndex,
+        tagId: item.tagId,
+        isAlarm: item.isAlarm || false,
+      }));
 
-    // Emit normalized data
-    eventBus.emitDataNormalized(suo);
-  }
+      // Compare and emit events for differences
+      const events = this.diffRfidSnapshots(previousSnapshot, currentSnapshot);
 
-  /**
-   * Handle stateful message types (RFID, metadata)
-   * @param {Object} suo - Standard Unified Object
-   */
-  handleStatefulMessages(suo) {
-    switch (suo.messageType) {
-      case "RFID_SNAPSHOT":
-        this.handleRfidSnapshot(suo);
-        break;
-      case "RFID_EVENT":
-        this.handleRfidEvent(suo);
-        break;
-      case "HEARTBEAT":
-      case "DEVICE_INFO":
-        this.handleMetadata(suo);
-        break;
-      default:
-        // Stateless messages (TEMP_HUM, NOISE, DOOR) pass through
-        break;
-    }
-  }
+      if (events.length > 0) {
+        // Emit RFID_EVENT for each difference
+        events.forEach((event) => {
+          const eventSuo = this.createSuo({
+            deviceId,
+            deviceType,
+            messageType: "RFID_EVENT",
+            messageId: `${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            moduleIndex: event.moduleIndex,
+            moduleId: event.moduleId,
+            payload: [{
+              sensorIndex: event.sensorIndex,
+              tagId: event.tagId,
+              action: event.action,
+              isAlarm: event.isAlarm || false,
+            }],
+          });
+          eventBus.emitDataNormalized(eventSuo);
+        });
+      }
 
-  /**
-   * Handle RFID snapshot with global diffing
-   * @param {Object} suo - Standard Unified Object
-   */
-  handleRfidSnapshot(suo) {
-    const { deviceId, payload } = suo;
-
-    // Get previous snapshot from cache
-    const previousSnapshot = this.stateCache.getRfidSnapshot(deviceId, 1);
-
-    // Compare and emit events for differences
-    const events = this.diffRfidSnapshots(previousSnapshot, payload);
-
-    if (events.length > 0) {
-      // Emit RFID_EVENT for each difference
-      events.forEach((event) => {
-        const eventSuo = {
-          deviceId: deviceId,
-          deviceType: suo.deviceType,
-          messageType: "RFID_EVENT",
-          messageId: `${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          payload: [event],
-        };
-        eventBus.emitDataNormalized(eventSuo);
+      // Emit full RFID_SNAPSHOT SUO for database
+      const snapshotSuo = this.createSuo({
+        deviceId,
+        deviceType,
+        messageType: "RFID_SNAPSHOT",
+        messageId,
+        moduleIndex,
+        moduleId,
+        payload: currentSnapshot,
       });
-    }
+      eventBus.emitDataNormalized(snapshotSuo);
 
-    // Update cache with new snapshot
-    this.stateCache.setRfidSnapshot(deviceId, 1, payload);
-  }
-
-  /**
-   * Handle RFID event with sync trigger
-   * @param {Object} suo - Standard Unified Object
-   */
-  handleRfidEvent(suo) {
-    // Do NOT update cache for V6800 RFID events
-    // Emit command.request to fetch fresh snapshot
-    eventBus.emitCommandRequest({
-      deviceId: suo.deviceId,
-      messageType: "QRY_RFID_SNAPSHOT",
+      // Update cache with new snapshot
+      this.stateCache.updateTelemetryField(deviceId, moduleIndex, "rfid_snapshot", currentSnapshot, "lastSeen_rfid");
     });
   }
 
   /**
-   * Handle metadata merge
-   * @param {Object} suo - Standard Unified Object
+   * Handle RFID_EVENT
+   * @param {Object} sif - Standard Intermediate Format
    */
-  handleMetadata(suo) {
-    const { deviceId, payload } = suo;
+  handleRfidEvent(sif) {
+    const { deviceId, deviceType } = sif;
 
-    // Merge partial metadata into cache
-    this.stateCache.mergeMetadata(deviceId, payload);
+    // V6800 RFID_EVENT: Trigger sync only
+    if (deviceType === "V6800") {
+      // Emit command.request to fetch fresh snapshot
+      eventBus.emitCommandRequest({
+        deviceId,
+        messageType: "QRY_RFID_SNAPSHOT",
+      });
+      // Do NOT update cache
+      // Do NOT emit SUO
+    } else {
+      // V5008 RFID_EVENT: Emit SUO directly
+      const { messageId, data } = sif;
+      data.forEach((moduleData) => {
+        const { moduleIndex, moduleId, data: eventData } = moduleData;
+        const normalizedEvents = eventData.map((item) => ({
+          sensorIndex: item.uIndex || item.sensorIndex,
+          tagId: item.tagId,
+          action: item.action,
+          isAlarm: item.isAlarm || false,
+        }));
 
-    // Emit full DEVICE_METADATA from cache
+        const eventSuo = this.createSuo({
+          deviceId,
+          deviceType,
+          messageType: "RFID_EVENT",
+          messageId,
+          moduleIndex,
+          moduleId,
+          payload: normalizedEvents,
+        });
+        eventBus.emitDataNormalized(eventSuo);
+      });
+    }
+  }
+
+  /**
+   * Handle TEMP_HUM message
+   * @param {Object} sif - Standard Intermediate Format
+   */
+  handleTempHum(sif) {
+    const { deviceId, deviceType, messageId, data } = sif;
+
+    // Split into separate SUOs per module (flattening)
+    data.forEach((moduleData) => {
+      const { moduleIndex, moduleId, data: thData } = moduleData;
+      const normalizedData = thData.map((item) => ({
+        sensorIndex: item.thIndex || item.sensorIndex,
+        temp: item.temp,
+        hum: item.hum,
+      }));
+
+      const suo = this.createSuo({
+        deviceId,
+        deviceType,
+        messageType: "TEMP_HUM",
+        messageId,
+        moduleIndex,
+        moduleId,
+        payload: normalizedData,
+      });
+      eventBus.emitDataNormalized(suo);
+
+      // Update cache
+      this.stateCache.updateTelemetryField(deviceId, moduleIndex, "temp_hum", normalizedData, "lastSeen_th");
+    });
+  }
+
+  /**
+   * Handle NOISE_LEVEL message
+   * @param {Object} sif - Standard Intermediate Format
+   */
+  handleNoiseLevel(sif) {
+    const { deviceId, deviceType, messageId, data } = sif;
+
+    // Split into separate SUOs per module (flattening)
+    data.forEach((moduleData) => {
+      const { moduleIndex, moduleId, data: nsData } = moduleData;
+      const normalizedData = nsData.map((item) => ({
+        sensorIndex: item.nsIndex || item.sensorIndex,
+        noise: item.noise,
+      }));
+
+      const suo = this.createSuo({
+        deviceId,
+        deviceType,
+        messageType: "NOISE_LEVEL",
+        messageId,
+        moduleIndex,
+        moduleId,
+        payload: normalizedData,
+      });
+      eventBus.emitDataNormalized(suo);
+
+      // Update cache
+      this.stateCache.updateTelemetryField(deviceId, moduleIndex, "noise_level", normalizedData, "lastSeen_ns");
+    });
+  }
+
+  /**
+   * Handle DOOR_STATE message
+   * @param {Object} sif - Standard Intermediate Format
+   */
+  handleDoorState(sif) {
+    const { deviceId, deviceType, messageId, data } = sif;
+
+    // Split into separate SUOs per module (flattening)
+    data.forEach((moduleData) => {
+      const { moduleIndex, moduleId } = moduleData;
+
+      // Move door state fields into payload array
+      const doorState = {
+        doorState: moduleData.doorState || null,
+        door1State: moduleData.door1State || null,
+        door2State: moduleData.door2State || null,
+      };
+
+      const suo = this.createSuo({
+        deviceId,
+        deviceType,
+        messageType: "DOOR_STATE",
+        messageId,
+        moduleIndex,
+        moduleId,
+        payload: [doorState],
+      });
+      eventBus.emitDataNormalized(suo);
+
+      // Update cache
+      const telemetry = this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
+      telemetry.doorState = doorState.doorState;
+      telemetry.door1State = doorState.door1State;
+      telemetry.door2State = doorState.door2State;
+      telemetry.lastSeen_door = new Date().toISOString();
+      this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
+    });
+  }
+
+  /**
+   * Handle metadata messages (DEVICE_INFO, MODULE_INFO, DEV_MOD_INFO)
+   * @param {Object} sif - Standard Intermediate Format
+   */
+  handleMetadata(sif) {
+    const { deviceId, deviceType, messageId, data } = sif;
+
+    // Extract metadata from SIF
+    const incomingMetadata = {
+      deviceType,
+      ip: sif.ip || null,
+      mac: sif.mac || null,
+      fwVer: sif.fwVer || null,
+      mask: sif.mask || null,
+      gwIp: sif.gwIp || null,
+      activeModules: data ? data.map((m) => ({
+        moduleIndex: m.moduleIndex,
+        moduleId: m.moduleId,
+        fwVer: m.fwVer || null,
+        uTotal: m.uTotal,
+      })) : [],
+    };
+
+    // Merge with change detection
+    const changes = this.stateCache.mergeMetadata(deviceId, incomingMetadata);
+
+    // Emit META_CHANGED_EVENT if any changes detected
+    if (changes.length > 0) {
+      const changeEventSuo = this.createSuo({
+        deviceId,
+        deviceType,
+        messageType: "META_CHANGED_EVENT",
+        messageId: `${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        moduleIndex: 0, // Device-level event
+        moduleId: "0",
+        payload: changes.map((desc) => ({ description: desc })),
+      });
+      eventBus.emitDataNormalized(changeEventSuo);
+    }
+
+    // Emit DEVICE_METADATA SUO from cache
+    this.emitDeviceMetadata(sif);
+  }
+
+  /**
+   * Handle UTOTAL_CHANGED message
+   * @param {Object} sif - Standard Intermediate Format
+   */
+  handleUtotalChanged(sif) {
+    const { deviceId, deviceType, data } = sif;
+
+    // Extract metadata
+    const incomingMetadata = {
+      deviceType,
+      activeModules: data ? data.map((m) => ({
+        moduleIndex: m.moduleIndex,
+        moduleId: m.moduleId,
+        fwVer: m.fwVer || null,
+        uTotal: m.uTotal,
+      })) : [],
+    };
+
+    // Merge with change detection
+    const changes = this.stateCache.mergeMetadata(deviceId, incomingMetadata);
+
+    // Emit META_CHANGED_EVENT if any changes detected
+    if (changes.length > 0) {
+      const changeEventSuo = this.createSuo({
+        deviceId,
+        deviceType,
+        messageType: "META_CHANGED_EVENT",
+        messageId: `${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        moduleIndex: 0,
+        moduleId: "0",
+        payload: changes.map((desc) => ({ description: desc })),
+      });
+      eventBus.emitDataNormalized(changeEventSuo);
+    }
+
+    // Emit DEVICE_METADATA SUO from cache
+    this.emitDeviceMetadata(sif);
+  }
+
+  /**
+   * Handle command responses (QRY_CLR_RESP, SET_CLR_RESP, CLN_ALM_RESP)
+   * @param {Object} sif - Standard Intermediate Format
+   */
+  handleCommandResponses(sif) {
+    const { deviceId, deviceType, messageType, messageId, data } = sif;
+
+    // Wrap result in payload array
+    const normalizedPayload = data.map((item) => ({
+      moduleIndex: item.moduleIndex,
+      moduleId: item.moduleId || null,
+      result: item.result || null,
+      originalReq: item.originalReq || null,
+      colorMap: item.colorMap || null,
+    }));
+
+    const suo = this.createSuo({
+      deviceId,
+      deviceType,
+      messageType,
+      messageId,
+      moduleIndex: 0, // Device-level
+      moduleId: "0",
+      payload: normalizedPayload,
+    });
+    eventBus.emitDataNormalized(suo);
+  }
+
+  /**
+   * Emit DEVICE_METADATA SUO from cache
+   * @param {Object} sif - Standard Intermediate Format
+   */
+  emitDeviceMetadata(sif) {
+    const { deviceId, deviceType } = sif;
+
+    // Get full metadata from cache
     const fullMetadata = this.stateCache.getMetadata(deviceId);
     if (fullMetadata) {
-      const metadataSuo = {
-        deviceId: deviceId,
-        deviceType: suo.deviceType,
+      const metadataSuo = this.createSuo({
+        deviceId,
+        deviceType,
         messageType: "DEVICE_METADATA",
         messageId: `${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        payload: [fullMetadata],
-      };
+        moduleIndex: 0, // Device-level
+        moduleId: "0",
+        // Common fields
+        ip: fullMetadata.ip,
+        mac: fullMetadata.mac,
+        // V5008 specific (send null if V6800)
+        fwVer: fullMetadata.fwVer,
+        mask: fullMetadata.mask,
+        gwIp: fullMetadata.gwIp,
+        // Payload with modules
+        payload: fullMetadata.activeModules || [],
+      });
       eventBus.emitDataNormalized(metadataSuo);
     }
   }
@@ -232,81 +479,106 @@ class UnifyNormalizer {
   diffRfidSnapshots(previous, current) {
     const events = [];
 
-    // Create maps for easy lookup
+    // Create maps for O(n) comparison
     const previousMap = new Map();
     const currentMap = new Map();
 
-    if (previous) {
+    if (previous && Array.isArray(previous)) {
       previous.forEach((item) => {
-        previousMap.set(`${item.sensorIndex}_${item.tagId}`, item);
+        previousMap.set(item.sensorIndex, item);
       });
     }
 
-    current.forEach((item) => {
-      currentMap.set(`${item.sensorIndex}_${item.tagId}`, item);
-    });
+    if (current && Array.isArray(current)) {
+      current.forEach((item) => {
+        currentMap.set(item.sensorIndex, item);
+      });
+    }
 
     // Check for new items (ATTACHED)
     current.forEach((item) => {
-      const key = `${item.sensorIndex}_${item.tagId}`;
-      const prevItem = previousMap.get(key);
+      const prevItem = previousMap.get(item.sensorIndex);
 
       if (!prevItem) {
+        // New tag attached
         events.push({
           moduleIndex: item.moduleIndex,
+          moduleId: item.moduleId,
           sensorIndex: item.sensorIndex,
           tagId: item.tagId,
           action: "ATTACHED",
-          alarm: item.isAlarm || false,
+          isAlarm: item.isAlarm || false,
+        });
+      } else if (prevItem.tagId !== item.tagId) {
+        // Tag ID changed (treat as detach + attach)
+        events.push({
+          moduleIndex: prevItem.moduleIndex,
+          moduleId: prevItem.moduleId,
+          sensorIndex: prevItem.sensorIndex,
+          tagId: prevItem.tagId,
+          action: "DETACHED",
+          isAlarm: prevItem.isAlarm || false,
+        });
+        events.push({
+          moduleIndex: item.moduleIndex,
+          moduleId: item.moduleId,
+          sensorIndex: item.sensorIndex,
+          tagId: item.tagId,
+          action: "ATTACHED",
+          isAlarm: item.isAlarm || false,
         });
       } else if (prevItem.isAlarm !== item.isAlarm) {
         // Alarm status changed
         events.push({
           moduleIndex: item.moduleIndex,
+          moduleId: item.moduleId,
           sensorIndex: item.sensorIndex,
           tagId: item.tagId,
           action: item.isAlarm ? "ALARM_ON" : "ALARM_OFF",
-          alarm: item.isAlarm || false,
+          isAlarm: item.isAlarm || false,
         });
       }
     });
 
     // Check for removed items (DETACHED)
-    previous.forEach((item) => {
-      const key = `${item.sensorIndex}_${item.tagId}`;
-      if (!currentMap.has(key)) {
-        events.push({
-          moduleIndex: item.moduleIndex,
-          sensorIndex: item.sensorIndex,
-          tagId: item.tagId,
-          action: "DETACHED",
-          alarm: false,
-        });
-      }
-    });
+    if (previous && Array.isArray(previous)) {
+      previous.forEach((item) => {
+        const currItem = currentMap.get(item.sensorIndex);
+        if (!currItem) {
+          // Tag detached
+          events.push({
+            moduleIndex: item.moduleIndex,
+            moduleId: item.moduleId,
+            sensorIndex: item.sensorIndex,
+            tagId: item.tagId,
+            action: "DETACHED",
+            isAlarm: false,
+          });
+        }
+      });
+    }
 
     return events;
   }
 
   /**
-   * Get unified message type
-   * @param {string} messageType - Original message type
-   * @returns {string} Unified message type
+   * Create SUO with proper structure
+   * @param {Object} params - SUO parameters
+   * @returns {Object} Standard Unified Object
    */
-  getUnifiedMessageType(messageType) {
-    const typeMap = {
-      HEARTBEAT: "HEARTBEAT",
-      TEMP_HUM: "TEMP_HUM",
-      NOISE_LEVEL: "NOISE_LEVEL",
-      RFID_SNAPSHOT: "RFID_SNAPSHOT",
-      RFID_EVENT: "RFID_EVENT",
-      DOOR_STATE: "DOOR_STATE",
-      DEVICE_INFO: "DEVICE_INFO",
-      CMD_RESPONSE: "QRY_CLR_RESP",
-      META_CHANGED_EVENT: "META_CHANGED_EVENT",
-    };
+  createSuo(params) {
+    const { deviceId, deviceType, messageType, messageId, moduleIndex, moduleId, payload, ...extraFields } = params;
 
-    return typeMap[messageType] || messageType;
+    return {
+      deviceId,
+      deviceType,
+      messageType,
+      messageId,
+      moduleIndex: moduleIndex || 0,
+      moduleId: moduleId || "0",
+      payload: Array.isArray(payload) ? payload : [],
+      ...extraFields,
+    };
   }
 
   /**
