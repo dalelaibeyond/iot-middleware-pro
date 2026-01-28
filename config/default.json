@@ -44,7 +44,7 @@
       "filters": ["RFID_EVENT", "DOOR_STATE", "META_CHANGED_EVENT"]
     },
     "mqttRelay": {
-      "enabled": false,
+      "enabled": true,
       "topic": "IoTOutput",
       "filters": []
     },
@@ -66,7 +66,7 @@
       "enabled": true
     },
     "cacheWatchdog": {
-      "enabled": true
+      "enabled": false
     },
     "apiServer": {
       "enabled": true,
