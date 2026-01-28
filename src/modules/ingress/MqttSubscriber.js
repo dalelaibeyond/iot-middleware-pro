@@ -7,6 +7,7 @@
 
 const mqtt = require("mqtt");
 const eventBus = require("../../core/EventBus");
+const { Console } = require("winston/lib/winston/transports");
 
 class MqttSubscriber {
   constructor() {
@@ -39,7 +40,13 @@ class MqttSubscriber {
 
     console.log(`Connecting to MQTT broker: ${mqttConfig.brokerUrl}`);
 
-    this.client = mqtt.connect(mqttConfig.brokerUrl, mqttConfig.options);
+    // Use unique client ID to avoid conflicts with CommandService
+    const options = {
+      ...mqttConfig.options,
+      clientId: "iot-middleware-sub",
+    };
+
+    this.client = mqtt.connect(mqttConfig.brokerUrl, options);
 
     this.client.on("connect", () => {
       this.isConnected = true;
@@ -111,12 +118,19 @@ class MqttSubscriber {
       const deviceId = topicParts[1];
       const messageType = topicParts[2];
 
+      
       // Determine device type from protocol
       const deviceType = protocol === "V5008Upload" ? "V5008" : "V6800";
 
       // Parse message based on device type
       let payload;
       if (deviceType === "V5008") {
+
+
+        //TEMP-DEBUG
+        console.log("Topic:", topic);
+        console.log("[MqttSubscriber] V5008 message:", message.toString('hex').toUpperCase());
+        
         // V5008 sends binary data
         payload = message;
       } else {

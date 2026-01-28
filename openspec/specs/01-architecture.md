@@ -18,6 +18,20 @@
 ### 1.1 Directory Structure
 
 ```
+
+iot-middleware-pro/
+├── config/                 <-- HERE (Environment Settings)
+│   ├── default.json
+│   ...
+│   
+├── src/                    <-- HERE (Application Logic)
+│   ├── app.js
+│   └── modules/
+|   ...
+├── .env                    <-- Secrets (Never commit to Git)
+└── package.json
+
+
 src/
 ├── core/
 │   ├── EventBus.js          # Events: mqtt.message, data.normalized, command.request
@@ -43,8 +57,7 @@ src/
 │       ├── WebhookService.js
 │       ├── ApiServer.js       # Dashboard Backend
 │       └── WebSocketServer.js # Real-time feed
-└── config/
-    └── default.json
+└── app.js
 
 ```
 

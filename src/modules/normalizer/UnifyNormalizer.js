@@ -5,6 +5,7 @@
  * Handles field standardization, state management, and event generation.
  */
 
+const c = require("config");
 const eventBus = require("../../core/EventBus");
 const StateCache = require("./StateCache");
 
@@ -436,6 +437,11 @@ class UnifyNormalizer {
       moduleId: "0",
       payload: normalizedPayload,
     });
+
+    //TEMP-DEBUG
+    console.log("[UnifyNormalizer] Emitting command response SUO:\n");
+    console.log(suo);
+    
     eventBus.emitDataNormalized(suo);
   }
 
@@ -445,6 +451,10 @@ class UnifyNormalizer {
    */
   emitDeviceMetadata(sif) {
     const { deviceId, deviceType } = sif;
+
+    // DEBUG: Log SIF structure
+    console.log("[UnifyNormalizer] emitDeviceMetadata SIF:", JSON.stringify(sif, null, 2));
+    console.log("[UnifyNormalizer] deviceType from SIF:", deviceType);
 
     // Get full metadata from cache
     const fullMetadata = this.stateCache.getMetadata(deviceId);
@@ -456,16 +466,20 @@ class UnifyNormalizer {
         messageId: `${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         moduleIndex: 0, // Device-level
         moduleId: "0",
-        // Common fields
-        ip: fullMetadata.ip,
-        mac: fullMetadata.mac,
+        // Common fields (ensure all are defined to avoid undefined bindings)
+        ip: fullMetadata.ip !== undefined ? fullMetadata.ip : null,
+        mac: fullMetadata.mac !== undefined ? fullMetadata.mac : null,
         // V5008 specific (send null if V6800)
-        fwVer: fullMetadata.fwVer,
-        mask: fullMetadata.mask,
-        gwIp: fullMetadata.gwIp,
+        fwVer: fullMetadata.fwVer !== undefined ? fullMetadata.fwVer : null,
+        mask: fullMetadata.mask !== undefined ? fullMetadata.mask : null,
+        gwIp: fullMetadata.gwIp !== undefined ? fullMetadata.gwIp : null,
         // Payload with modules
         payload: fullMetadata.activeModules || [],
       });
+
+      // DEBUG: Log SUO structure before emission
+      console.log("[UnifyNormalizer] Emitting DEVICE_METADATA SUO:", JSON.stringify(metadataSuo, null, 2));
+
       eventBus.emitDataNormalized(metadataSuo);
     }
   }

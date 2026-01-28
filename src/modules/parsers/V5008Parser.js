@@ -32,6 +32,12 @@ class V5008Parser {
    * @returns {Object|null} SIF (Standard Intermediate Format) or null if parse fails
    */
   parse(buffer, metadata) {
+
+
+        //TEMP-DEBUG
+        console.log("Topic:", metadata.topic);
+        console.log("[V5008Parser] V5008 message:", buffer.toString('hex').toUpperCase());
+
     try {
       if (!Buffer.isBuffer(buffer)) {
         console.error("V5008Parser: Invalid input, expected Buffer");
@@ -62,6 +68,10 @@ class V5008Parser {
         messageType: messageType,
         data: data,
       };
+
+      //TEMP-DEBUG
+      console.log("[V5008Parser] Parsed SIF:\n");
+      console.log(sif);
 
       return sif;
     } catch (error) {
@@ -295,17 +305,18 @@ class V5008Parser {
       }
 
       const modAddr = buffer.readUInt8(offset);
-      const modId = buffer.readUInt32BE(offset + 1);
+      const modId = buffer.slice(offset + 1, offset + 5).toString("hex").toUpperCase();
+      const modIdValue = buffer.readUInt32BE(offset + 1);
       const total = buffer.readUInt8(offset + 5);
 
       // Filter out slots where ModId == 0 or ModAddr > 5
-      if (modId === 0 || modAddr > 5) {
+      if (modIdValue === 0 || modAddr > 5) {
         continue;
       }
 
       data.push({
         moduleIndex: modAddr + 1, // Convert to 1-based
-        moduleId: modId.toString("hex").toUpperCase(),
+        moduleId: modId,
         uTotal: total,
       });
     }
@@ -325,7 +336,7 @@ class V5008Parser {
 
     // Read header
     const modAddr = buffer.readUInt8(1);
-    const modId = buffer.readUInt32BE(2);
+    const modId = buffer.slice(2, 6).toString("hex").toUpperCase();
     const res = buffer.readUInt8(6);
     const total = buffer.readUInt8(7);
     const count = buffer.readUInt8(8);
@@ -350,7 +361,7 @@ class V5008Parser {
 
       data.push({
         moduleIndex: modAddr + 1,
-        moduleId: modId.toString("hex").toUpperCase(),
+        moduleId: modId,
         uTotal: total,
         uIndex: uPos,
         isAlarm: alarm === 0x01,
@@ -380,7 +391,7 @@ class V5008Parser {
       }
 
       const modAddr = buffer.readUInt8(offset);
-      const modId = buffer.readUInt32BE(offset + 1);
+      const modId = buffer.slice(offset + 1, offset + 5).toString("hex").toUpperCase();
       const addr = buffer.readUInt8(offset + 5);
 
       // If Addr === 0, skip (no sensor)
@@ -389,16 +400,16 @@ class V5008Parser {
       }
 
       const tInt = buffer.readUInt8(offset + 6);
-      const tFrac = buffer.readUInt8(offset + 6);
-      const hInt = buffer.readUInt8(offset + 6);
-      const hFrac = buffer.readUInt8(offset + 6);
+      const tFrac = buffer.readUInt8(offset + 7);
+      const hInt = buffer.readUInt8(offset + 8);
+      const hFrac = buffer.readUInt8(offset + 9);
 
       const temp = this.parseSignedFloat(tInt, tFrac);
       const hum = this.parseSignedFloat(hInt, hFrac);
 
       data.push({
         moduleIndex: modAddr + 1,
-        moduleId: modId.toString("hex").toUpperCase(),
+        moduleId: modId,
         thIndex: addr,
         temp: temp,
         hum: hum,
@@ -427,7 +438,7 @@ class V5008Parser {
       }
 
       const modAddr = buffer.readUInt8(offset);
-      const modId = buffer.readUInt32BE(offset + 1);
+      const modId = buffer.slice(offset + 1, offset + 5).toString("hex").toUpperCase();
       const addr = buffer.readUInt8(offset + 5);
 
       // If Addr === 0, skip (no sensor)
@@ -436,13 +447,13 @@ class V5008Parser {
       }
 
       const nInt = buffer.readUInt8(offset + 6);
-      const nFrac = buffer.readUInt8(offset + 6);
+      const nFrac = buffer.readUInt8(offset + 7);
 
       const noise = this.parseSignedFloat(nInt, nFrac);
 
       data.push({
         moduleIndex: modAddr + 1,
-        moduleId: modId.toString("hex").toUpperCase(),
+        moduleId: modId,
         nsIndex: addr,
         noise: noise,
       });
@@ -460,13 +471,13 @@ class V5008Parser {
    */
   parseDoorState(buffer) {
     const modAddr = buffer.readUInt8(1);
-    const modId = buffer.readUInt32BE(2);
+    const modId = buffer.slice(2, 6).toString("hex").toUpperCase();
     const doorState = buffer.readUInt8(6);
 
     return [
       {
         moduleIndex: modAddr + 1,
-        moduleId: modId.toString("hex").toUpperCase(),
+        moduleId: modId,
         doorState: doorState,
       },
     ];

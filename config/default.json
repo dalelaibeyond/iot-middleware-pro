@@ -12,24 +12,22 @@
       "reconnectPeriod": 5000
     },
     "topics": {
-      "v5008": "V5008Upload/+/#",
-      "v6800": "V6800Upload/+/#"
+      "v5008": "V5008Upload/#",
+      "v6800": "V6800Upload/#"
     },
     "downloadTopic": "V6800Download"
   },
-  "database": {
-    "client": "mysql2",
-    "connection": {
-      "host": "localhost",
-      "port": 3306,
-      "user": "root",
-      "password": "Abc#!Dale123",
-      "database": "iot_middleware"
-    }
-  },
   "modules": {
     "database": {
-      "enabled": true
+      "enabled": true,
+      "client": "mysql2",
+      "connection": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "Abc#!Dale123",
+        "database": "iot_middleware"
+      }
     },
     "eventBus": {
       "enabled": true
@@ -79,11 +77,6 @@
       "enabled": true,
       "port": 3001
     }
-  },
-  "normalizer": {
-    "cacheType": "memory",
-    "heartbeatTimeout": 120000,
-    "checkInterval": 30000
   },
   "logging": {
     "level": "info",

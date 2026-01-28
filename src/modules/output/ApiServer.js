@@ -104,7 +104,7 @@ class ApiServer {
       (req, res) => {
         try {
           const { deviceId, moduleIndex } = req.params;
-          const state = StateCache.getModuleState(
+          const state = StateCache.getTelemetry(
             deviceId,
             parseInt(moduleIndex),
           );

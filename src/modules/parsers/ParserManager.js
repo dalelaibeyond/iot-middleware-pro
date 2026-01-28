@@ -53,7 +53,7 @@ class ParserManager {
    */
   handleMessage(mqttMessage) {
     try {
-      const { deviceId, deviceType, messageType, payload, timestamp } =
+      const { deviceId, deviceType, messageType, payload, timestamp, topic } =
         mqttMessage;
 
       // Get the appropriate parser for this device type
@@ -72,10 +72,10 @@ class ParserManager {
       let sif;
       if (deviceType === "V5008") {
         // V5008 uses binary payload
-        sif = parser.parse(payload, { deviceId, messageType, timestamp });
+        sif = parser.parse(payload, { deviceId, messageType, timestamp, topic });
       } else {
         // V6800 uses JSON payload
-        sif = parser.parse(payload, { deviceId, messageType, timestamp });
+        sif = parser.parse(payload, { deviceId, messageType, timestamp, topic });
       }
 
       if (!sif) {

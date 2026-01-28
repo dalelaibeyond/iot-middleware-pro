@@ -58,6 +58,9 @@ class StorageService {
    */
   handleData(suo) {
     try {
+      // DEBUG: Log SUO structure when received
+      console.log("[StorageService] handleData received SUO:", JSON.stringify(suo, null, 2));
+
       // Check if this message type should be stored
       if (this.config.filters && this.config.filters.length > 0) {
         if (!this.config.filters.includes(suo.messageType)) {
@@ -230,7 +233,7 @@ class StorageService {
       // Note: Do not insert NULL explicitly for missing indices;
       // let the Database default handle missing columns
       if (item.sensorIndex >= 16 && item.sensorIndex <= 18) {
-        moduleData[`noise_index${item.sensorIndex}`] = item.noiseLevel;
+        moduleData[`noise_index${item.sensorIndex}`] = item.noise;
       }
     });
 
@@ -271,29 +274,36 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleDeviceMetadata(suo) {
-    const { deviceId, payload } = suo;
+    const { deviceId, deviceType, payload, ip, mac, fwVer, mask, gwIp } = suo;
 
-    if (payload.length > 0) {
-      const metadata = payload[0];
+    // DEBUG: Log SUO structure to diagnose deviceType issue
+    console.log("[StorageService] handleDeviceMetadata SUO:", JSON.stringify(suo, null, 2));
+    console.log("[StorageService] deviceType value:", deviceType);
 
-      // Use UPSERT (Insert on Duplicate Key Update)
-      database.upsert(
-        "iot_meta_data",
-        {
-          device_id: deviceId,
-          device_type: metadata.deviceType || "V6800",
-          device_fwVer: metadata.deviceFwVer || null,
-          device_mask: metadata.deviceMask || null,
-          device_gwIp: metadata.deviceGwIp || null,
-          device_ip: metadata.deviceIp || null,
-          device_mac: metadata.deviceMac || null,
-          modules: metadata.modules ? JSON.stringify(metadata.modules) : null,
-          parse_at: new Date(),
-          update_at: new Date(),
-        },
-        "device_id",
-      );
-    }
+    // Ensure all fields are defined to avoid undefined bindings
+    // Use null for missing fields (HEARTBEAT messages may not have device-level metadata)
+    const metadataData = {
+      device_id: deviceId,
+      device_type: deviceType || "V6800",
+      device_fwVer: fwVer !== undefined ? fwVer : null,
+      device_mask: mask !== undefined ? mask : null,
+      device_gwIp: gwIp !== undefined ? gwIp : null,
+      device_ip: ip !== undefined ? ip : null,
+      device_mac: mac !== undefined ? mac : null,
+      modules: payload && payload.length > 0 ? JSON.stringify(payload) : null,
+      parse_at: new Date(),
+      update_at: new Date(),
+    };
+
+    // DEBUG: Log metadataData before upsert
+    console.log("[StorageService] metadataData:", JSON.stringify(metadataData, null, 2));
+
+    // Use UPSERT (Insert on Duplicate Key Update)
+    database.upsert(
+      "iot_meta_data",
+      metadataData,
+      "device_id",
+    );
   }
 
   /**
@@ -307,7 +317,7 @@ class StorageService {
       const result = payload[0];
       this.addToBatch("iot_cmd_result", {
         device_id: deviceId,
-        cmd: result.cmd,
+        cmd: suo.messageType,
         result: result.result,
         original_req: result.originalReq || null,
         color_map: result.colorMap ? JSON.stringify(result.colorMap) : null,
@@ -328,7 +338,7 @@ class StorageService {
       this.addToBatch("iot_topchange_event", {
         device_id: deviceId,
         device_type: deviceType,
-        event_desc: item.eventDesc,
+        event_desc: item.description,
         parse_at: new Date(),
         update_at: new Date(),
       });

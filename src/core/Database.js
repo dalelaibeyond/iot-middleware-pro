@@ -22,11 +22,12 @@ class Database {
       return;
     }
 
-    const dbConfig = config.get("database");
+    const dbConfig = config.get("modules.database");
 
-    this.pool = knex({
+    // Create a deep copy of config to avoid frozen object issues with Knex
+    const knexConfig = {
       client: dbConfig.client,
-      connection: dbConfig.connection,
+      connection: JSON.parse(JSON.stringify(dbConfig.connection)),
       pool: {
         min: 2,
         max: 10,
@@ -34,7 +35,9 @@ class Database {
         idleTimeoutMillis: 30000,
       },
       debug: false,
-    });
+    };
+
+    this.pool = knex(knexConfig);
 
     // Test connection
     try {
@@ -109,6 +112,17 @@ class Database {
    */
   async upsert(table, data, uniqueKey = "device_id") {
     const connection = this.getConnection();
+
+    // DEBUG: Log upsert parameters
+    console.log("[Database] upsert called with:");
+    console.log("  table:", table);
+    console.log("  data keys:", Object.keys(data));
+    console.log("  data values:", Object.values(data));
+    console.log("  uniqueKey:", uniqueKey);
+
+    const bindings = [table, ...Object.values(data)];
+    console.log("  bindings array:", bindings);
+
     const result = await connection.raw(
       `
       INSERT INTO ?? (${Object.keys(data).join(", ")})
@@ -121,7 +135,7 @@ class Database {
           .map((k) => `${k} = VALUES(${k})`)
           .join(", ")}
     `,
-      [table, ...Object.values(data)],
+      bindings,
     );
 
     return result[0].affectedRows;

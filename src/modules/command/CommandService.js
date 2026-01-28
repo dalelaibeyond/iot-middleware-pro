@@ -41,7 +41,13 @@ class CommandService {
       `Connecting to MQTT broker for commands: ${mqttConfig.brokerUrl}`,
     );
 
-    this.client = mqtt.connect(mqttConfig.brokerUrl, mqttConfig.options);
+    // Use unique client ID to avoid conflicts with MqttSubscriber
+    const options = {
+      ...mqttConfig.options,
+      clientId: "iot-middleware-cmd",
+    };
+
+    this.client = mqtt.connect(mqttConfig.brokerUrl, options);
 
     this.client.on("connect", () => {
       this.isConnected = true;

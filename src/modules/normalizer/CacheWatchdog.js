@@ -35,7 +35,7 @@ class CacheWatchdog {
       return;
     }
 
-    const normalizerConfig = require("config").get("normalizer");
+    const normalizerConfig = require("config").get("modules.normalizer");
     const checkInterval = normalizerConfig.checkInterval || 30000; // Default: 30s
 
     console.log(`Starting CacheWatchdog (interval: ${checkInterval}ms)`);
@@ -68,14 +68,14 @@ class CacheWatchdog {
    */
   check() {
     try {
-      const normalizerConfig = require("config").get("normalizer");
+      const normalizerConfig = require("config").get("modules.normalizer");
       const heartbeatTimeout = normalizerConfig.heartbeatTimeout || 120000; // Default: 2 minutes
 
       const now = new Date();
       const stats = StateCache.getStats();
 
       console.log(
-        `CacheWatchdog check: ${stats.moduleStateCount} modules in cache`,
+        `CacheWatchdog check: ${stats.telemetryCount} modules in cache`,
       );
 
       // Iterate through all modules in the cache
