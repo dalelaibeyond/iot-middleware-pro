@@ -35,8 +35,9 @@ class V5008Parser {
 
 
         //TEMP-DEBUG
-        console.log("Topic:", metadata.topic);
-        console.log("[V5008Parser] V5008 message:", buffer.toString('hex').toUpperCase());
+        console.log("[V5008Parser] Raw Hex:\n");
+        console.log({topic:metadata.topic, rawHex:buffer.toString('hex').toUpperCase()});
+        
 
     try {
       if (!Buffer.isBuffer(buffer)) {
@@ -53,21 +54,29 @@ class V5008Parser {
       const messageType = this.getMessageType(buffer, metadata);
 
       // Parse message based on type
-      const data = this.parsePayload(buffer, messageType, metadata);
+      const parsedData = this.parsePayload(buffer, messageType, metadata);
 
       // Construct SIF (Standard Intermediate Format)
+      // Handle different data structures based on message type
       const sif = {
+        deviceId: metadata.deviceId,
+        deviceType: "V5008",
+        messageType: messageType,
+        messageId: this.parseMessageId(buffer),
         meta: {
-          deviceId: metadata.deviceId,
-          deviceType: "V5008",
-          messageType: messageType,
           topic: metadata.topic,
           rawHex: buffer.toString("hex").toUpperCase(),
         },
-        deviceType: "V5008",
-        messageType: messageType,
-        data: data,
       };
+
+      // For messages that return objects with top-level fields (RFID_SNAPSHOT, TEMP_HUM, NOISE_LEVEL, QRY_CLR_RESP)
+      // merge those fields into the SIF and keep the data array
+      if (parsedData && typeof parsedData === 'object' && !Array.isArray(parsedData)) {
+        Object.assign(sif, parsedData);
+      } else {
+        // For messages that return arrays (HEARTBEAT, MODULE_INFO)
+        sif.data = parsedData;
+      }
 
       //TEMP-DEBUG
       console.log("[V5008Parser] Parsed SIF:\n");
@@ -142,7 +151,7 @@ class V5008Parser {
    * @param {Buffer} buffer - Raw binary message
    * @param {string} messageType - Message type
    * @param {Object} metadata - Message metadata
-   * @returns {Array} Parsed data array
+   * @returns {Array|Object} Parsed data (array or object depending on message type)
    */
   parsePayload(buffer, messageType, metadata) {
     switch (messageType) {
@@ -200,13 +209,16 @@ class V5008Parser {
 
   /**
    * Parse message ID from buffer (last 4 bytes)
+   * Reads last 4 bytes as Unsigned Big-Endian Integer
    * @param {Buffer} buffer - Raw binary message
-   * @returns {string} Message ID
+   * @returns {string} Message ID as decimal string
    */
   parseMessageId(buffer) {
     if (buffer.length >= 4) {
       const last4Bytes = buffer.slice(-4);
-      return last4Bytes.toString("hex").toUpperCase();
+      // Read as Unsigned Big-Endian Integer (32-bit)
+      const messageIdValue = last4Bytes.readUInt32BE(0);
+      return messageIdValue.toString();
     }
     return "";
   }
@@ -305,7 +317,6 @@ class V5008Parser {
       }
 
       const modAddr = buffer.readUInt8(offset);
-      const modId = buffer.slice(offset + 1, offset + 5).toString("hex").toUpperCase();
       const modIdValue = buffer.readUInt32BE(offset + 1);
       const total = buffer.readUInt8(offset + 5);
 
@@ -315,8 +326,8 @@ class V5008Parser {
       }
 
       data.push({
-        moduleIndex: modAddr + 1, // Convert to 1-based
-        moduleId: modId,
+        moduleIndex: modAddr,
+        moduleId: modIdValue.toString(),
         uTotal: total,
       });
     }
@@ -329,14 +340,12 @@ class V5008Parser {
    * Header: 0xBB
    * Schema: Header(1) + ModAddr(1) + ModId(4) + Res(1) + Total(1) + Count(1) + [uPos(1) + Alarm(1) + TagId(4)] × Count + MsgId(4)
    * @param {Buffer} buffer - Raw binary message
-   * @returns {Array} Parsed RFID snapshot data
+   * @returns {Object} Parsed RFID snapshot data with top-level fields and data array
    */
   parseRfidSnapshot(buffer) {
-    const data = [];
-
     // Read header
     const modAddr = buffer.readUInt8(1);
-    const modId = buffer.slice(2, 6).toString("hex").toUpperCase();
+    const modId = buffer.readUInt32BE(2).toString();
     const res = buffer.readUInt8(6);
     const total = buffer.readUInt8(7);
     const count = buffer.readUInt8(8);
@@ -345,6 +354,7 @@ class V5008Parser {
     const dataOffset = 9;
     const msgIdOffset = dataOffset + slotSize * count;
 
+    const data = [];
     for (let i = 0; i < count; i++) {
       const offset = dataOffset + i * slotSize;
 
@@ -360,16 +370,20 @@ class V5008Parser {
         .toUpperCase();
 
       data.push({
-        moduleIndex: modAddr + 1,
-        moduleId: modId,
-        uTotal: total,
         uIndex: uPos,
         isAlarm: alarm === 0x01,
         tagId: tagId,
       });
     }
 
-    return data;
+    // Return object with top-level fields and data array (per spec)
+    return {
+      moduleIndex: modAddr,
+      moduleId: modId,
+      uTotal: total,
+      onlineCount: count,
+      data: data,
+    };
   }
 
   /**
@@ -377,46 +391,51 @@ class V5008Parser {
    * Topic: .../TemHum
    * Schema: ModAddr(1) + ModId(4) + [Addr(1) + T_Int(1) + T_Frac(1) + H_Int(1) + H_Frac(1)] × 6 + MsgId(4)
    * @param {Buffer} buffer - Raw binary message
-   * @returns {Array} Parsed temperature/humidity data
+   * @returns {Object} Parsed temperature/humidity data with top-level fields and data array
    */
   parseTempHum(buffer) {
+    // Read module info from first slot
+    const modAddr = buffer.readUInt8(0);
+    const modId = buffer.readUInt32BE(1).toString();
+
     const data = [];
     const slotCount = 6;
 
     for (let i = 0; i < slotCount; i++) {
-      const offset = 1 + i * 7; // Skip header byte
+      const offset = 5 + i * 5; // Skip ModAddr(1) + ModId(4)
 
-      if (offset + 7 > buffer.length) {
+      if (offset + 5 > buffer.length) {
         break;
       }
 
-      const modAddr = buffer.readUInt8(offset);
-      const modId = buffer.slice(offset + 1, offset + 5).toString("hex").toUpperCase();
-      const addr = buffer.readUInt8(offset + 5);
+      const addr = buffer.readUInt8(offset);
 
       // If Addr === 0, skip (no sensor)
       if (addr === 0) {
         continue;
       }
 
-      const tInt = buffer.readUInt8(offset + 6);
-      const tFrac = buffer.readUInt8(offset + 7);
-      const hInt = buffer.readUInt8(offset + 8);
-      const hFrac = buffer.readUInt8(offset + 9);
+      const tInt = buffer.readUInt8(offset + 1);
+      const tFrac = buffer.readUInt8(offset + 2);
+      const hInt = buffer.readUInt8(offset + 3);
+      const hFrac = buffer.readUInt8(offset + 4);
 
       const temp = this.parseSignedFloat(tInt, tFrac);
       const hum = this.parseSignedFloat(hInt, hFrac);
 
       data.push({
-        moduleIndex: modAddr + 1,
-        moduleId: modId,
         thIndex: addr,
         temp: temp,
         hum: hum,
       });
     }
 
-    return data;
+    // Return object with top-level fields and data array (per spec)
+    return {
+      moduleIndex: modAddr,
+      moduleId: modId,
+      data: data,
+    };
   }
 
   /**
@@ -424,42 +443,47 @@ class V5008Parser {
    * Topic: .../Noise
    * Schema: ModAddr(1) + ModId(4) + [Addr(1) + N_Int(1) + N_Frac(1)] × 3 + MsgId(4)
    * @param {Buffer} buffer - Raw binary message
-   * @returns {Array} Parsed noise level data
+   * @returns {Object} Parsed noise level data with top-level fields and data array
    */
   parseNoiseLevel(buffer) {
+    // Read module info from first slot
+    const modAddr = buffer.readUInt8(0);
+    const modId = buffer.readUInt32BE(1).toString();
+
     const data = [];
     const slotCount = 3;
 
     for (let i = 0; i < slotCount; i++) {
-      const offset = 1 + i * 7; // Skip header byte
+      const offset = 5 + i * 3; // Skip ModAddr(1) + ModId(4)
 
-      if (offset + 7 > buffer.length) {
+      if (offset + 3 > buffer.length) {
         break;
       }
 
-      const modAddr = buffer.readUInt8(offset);
-      const modId = buffer.slice(offset + 1, offset + 5).toString("hex").toUpperCase();
-      const addr = buffer.readUInt8(offset + 5);
+      const addr = buffer.readUInt8(offset);
 
       // If Addr === 0, skip (no sensor)
       if (addr === 0) {
         continue;
       }
 
-      const nInt = buffer.readUInt8(offset + 6);
-      const nFrac = buffer.readUInt8(offset + 7);
+      const nInt = buffer.readUInt8(offset + 1);
+      const nFrac = buffer.readUInt8(offset + 2);
 
       const noise = this.parseSignedFloat(nInt, nFrac);
 
       data.push({
-        moduleIndex: modAddr + 1,
-        moduleId: modId,
         nsIndex: addr,
         noise: noise,
       });
     }
 
-    return data;
+    // Return object with top-level fields and data array (per spec)
+    return {
+      moduleIndex: modAddr,
+      moduleId: modId,
+      data: data,
+    };
   }
 
   /**
@@ -467,20 +491,19 @@ class V5008Parser {
    * Header: 0xBA
    * Schema: Header(1) + ModAddr(1) + ModId(4) + State(1) + MsgId(4)
    * @param {Buffer} buffer - Raw binary message
-   * @returns {Array} Parsed door state data
+   * @returns {Object} Parsed door state data with top-level fields (no data array)
    */
   parseDoorState(buffer) {
     const modAddr = buffer.readUInt8(1);
-    const modId = buffer.slice(2, 6).toString("hex").toUpperCase();
+    const modId = buffer.readUInt32BE(2).toString();
     const doorState = buffer.readUInt8(6);
 
-    return [
-      {
-        moduleIndex: modAddr + 1,
-        moduleId: modId,
-        doorState: doorState,
-      },
-    ];
+    // Return object with top-level fields (per spec, NO data array)
+    return {
+      moduleIndex: modAddr,
+      moduleId: modId,
+      doorState: doorState,
+    };
   }
 
   /**
@@ -488,7 +511,7 @@ class V5008Parser {
    * Header: 0xEF01
    * Schema: Header(2) + Model(2) + Fw(4) + IP(4) + Mask(4) + Gw(4) + Mac(6) + MsgId(4)
    * @param {Buffer} buffer - Raw binary message
-   * @returns {Array} Parsed device info data
+   * @returns {Object} Parsed device info data with top-level fields (no data array)
    */
   parseDeviceInfo(buffer) {
     const model = buffer.slice(2, 4).toString("hex").toUpperCase();
@@ -498,16 +521,15 @@ class V5008Parser {
     const gwIp = this.parseIp(buffer, 18);
     const mac = this.parseMac(buffer, 22);
 
-    return [
-      {
-        model: model,
-        fwVer: fw.toString(),
-        ip: ip,
-        mask: mask,
-        gwIp: gwIp,
-        mac: mac,
-      },
-    ];
+    // Return object with top-level fields (per spec, NO data array)
+    return {
+      model: model,
+      fwVer: fw.toString(),
+      ip: ip,
+      mask: mask,
+      gwIp: gwIp,
+      mac: mac,
+    };
   }
 
   /**
@@ -556,7 +578,7 @@ class V5008Parser {
       const fw = buffer.readUInt32BE(offset + 1);
 
       data.push({
-        moduleIndex: modAddr + 1,
+        moduleIndex: modAddr,
         fwVer: fw.toString(),
       });
     }
@@ -570,10 +592,9 @@ class V5008Parser {
    * Schema: Header(1) + DeviceId(4) + Result(1) + OriginalReq(Var) + [ColorCode × N] + MsgId(4)
    * N = Buffer.length - 12 (Header:1 + DevId:4 + Result:1 + Req:2 + MsgId:4)
    * @param {Buffer} buffer - Raw binary message
-   * @returns {Array} Parsed command response data
+   * @returns {Object} Parsed command response data with top-level fields and data array
    */
   parseQryClrResp(buffer) {
-    const deviceId = buffer.slice(1, 5).toString("hex").toUpperCase();
     const result = buffer.readUInt8(6);
     const originalReq = this.parseOriginalReq(buffer, 0xe4);
     const n = (buffer.length - 12) / 1;
@@ -585,14 +606,13 @@ class V5008Parser {
       data.push(colorCode);
     }
 
-    return [
-      {
-        result: result === 0xa1 ? "Success" : "Failure",
-        originalReq: originalReq.originalReq,
-        moduleIndex: originalReq.moduleIndex,
-        colorCode: data,
-      },
-    ];
+    // Return object with top-level fields and data array (per spec)
+    return {
+      result: result === 0xa1 ? "Success" : "Failure",
+      originalReq: originalReq.originalReq,
+      moduleIndex: originalReq.moduleIndex,
+      data: data,
+    };
   }
 
   /**
@@ -601,20 +621,18 @@ class V5008Parser {
    * Schema: Header(1) + DeviceId(4) + Result(1) + OriginalReq(Var) + MsgId(4)
    * Var = Buffer.length - 10 (Header:1 + DevId:4 + Result:1 + MsgId:4)
    * @param {Buffer} buffer - Raw binary message
-   * @returns {Array} Parsed command response data
+   * @returns {Object} Parsed command response data with top-level fields (no data array)
    */
   parseSetClrResp(buffer) {
-    const deviceId = buffer.slice(1, 5).toString("hex").toUpperCase();
     const result = buffer.readUInt8(6);
     const originalReq = this.parseOriginalReq(buffer, 0xe1);
 
-    return [
-      {
-        result: result === 0xa1 ? "Success" : "Failure",
-        originalReq: originalReq.originalReq,
-        moduleIndex: originalReq.moduleIndex,
-      },
-    ];
+    // Return object with top-level fields (per spec, NO data array)
+    return {
+      result: result === 0xa1 ? "Success" : "Failure",
+      originalReq: originalReq.originalReq,
+      moduleIndex: originalReq.moduleIndex,
+    };
   }
 
   /**
@@ -623,20 +641,18 @@ class V5008Parser {
    * Schema: Header(1) + DeviceId(4) + Result(1) + OriginalReq(Var) + MsgId(4)
    * Var = Buffer.length - 10 (Header:1 + DevId:4 + Result:1 + MsgId:4)
    * @param {Buffer} buffer - Raw binary message
-   * @returns {Array} Parsed command response data
+   * @returns {Object} Parsed command response data with top-level fields (no data array)
    */
   parseClnAlmResp(buffer) {
-    const deviceId = buffer.slice(1, 5).toString("hex").toUpperCase();
     const result = buffer.readUInt8(6);
     const originalReq = this.parseOriginalReq(buffer, 0xe2);
 
-    return [
-      {
-        result: result === 0xa1 ? "Success" : "Failure",
-        originalReq: originalReq.originalReq,
-        moduleIndex: originalReq.moduleIndex,
-      },
-    ];
+    // Return object with top-level fields (per spec, NO data array)
+    return {
+      result: result === 0xa1 ? "Success" : "Failure",
+      originalReq: originalReq.originalReq,
+      moduleIndex: originalReq.moduleIndex,
+    };
   }
 }
 

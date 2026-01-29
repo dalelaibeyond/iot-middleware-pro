@@ -29,6 +29,9 @@ class EventBus extends EventEmitter {
    * @param {Object} suo - The Standard Unified Object
    */
   emitDataNormalized(suo) {
+    //TEMP-DEBUG: Log SUO structure
+    console.log("[EventBus] emitDataNormalized SUO:\n");
+    console.log(suo);
     this.emit("data.normalized", suo);
   }
 

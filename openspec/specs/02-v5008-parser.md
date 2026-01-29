@@ -68,7 +68,7 @@ The parser determines `messageType` using this strict precedence:
 | --- | --- | --- | --- |
 | **Common Fields** |  |  |  |
 | `DeviceId` | 4B | `deviceId` | **Context Dependent:**<br>1. Header `AA`: Bytes [1-4] → String.<br>2. Others: Extract from MQTT Topic. |
-| `MsgId` | 4B | `messageId` | Last 4 bytes of packet → String. |
+ | `MsgId` | 4B | `messageId` | Last 4 bytes of packet → Reading an Unsigned Big-Endian Integer from the Buffer.  → String |
 | `ModId` | 4B | `moduleId` | `uint32_be` → String. |
 | `ModAddr` | 1B | `moduleIndex` | `uint8` (Range 1-5). |
 | **Sensor Indices** |  |  |  |
