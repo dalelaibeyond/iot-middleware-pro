@@ -519,11 +519,13 @@ class V6800Parser {
 
         if (moduleItem.data && Array.isArray(moduleItem.data)) {
           moduleItem.data.forEach((colorItem) => {
+            const uIndex = colorItem.u_index !== undefined ? colorItem.u_index : 0;
             const colorName =
               colorItem.color !== undefined ? String(colorItem.color) : "";
             const colorCode = colorItem.code !== undefined ? colorItem.code : 0;
 
             colorData.push({
+              uIndex: uIndex,
               colorName: colorName,
               colorCode: colorCode,
             });

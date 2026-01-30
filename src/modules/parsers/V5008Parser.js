@@ -35,8 +35,8 @@ class V5008Parser {
 
 
         //TEMP-DEBUG
-        console.log("[V5008Parser] Raw Hex:\n");
-        console.log({topic:metadata.topic, rawHex:buffer.toString('hex').toUpperCase()});
+        //console.log("[V5008Parser] Raw Hex:\n");
+        //console.log({topic:metadata.topic, rawHex:buffer.toString('hex').toUpperCase()});
         
 
     try {
@@ -201,7 +201,7 @@ class V5008Parser {
     // Check for Header AA (command response) or extract from topic
     if (buffer.length >= 5 && buffer.readUInt8(0) === 0xaa) {
       // Header AA: Bytes [1-4] -> DeviceId
-      return buffer.toString("hex", 1, 4).toUpperCase();
+      return buffer.toString("hex", 1, 5).toUpperCase();
     }
     // Extract from topic (handled in metadata)
     return "";
@@ -499,6 +499,7 @@ class V5008Parser {
     const doorState = buffer.readUInt8(6);
 
     // Return object with top-level fields (per spec, NO data array)
+    // Note: Business logic validation (modAddr range, modId non-zero) is handled in UnifyNormalizer
     return {
       moduleIndex: modAddr,
       moduleId: modId,
@@ -601,7 +602,7 @@ class V5008Parser {
 
     const data = [];
     for (let i = 0; i < n; i++) {
-      const offset = 7 + i;
+      const offset = 8 + i;
       const colorCode = buffer.readUInt8(offset);
       data.push(colorCode);
     }

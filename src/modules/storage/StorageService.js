@@ -8,6 +8,7 @@
 const eventBus = require("../../core/EventBus");
 const database = require("../../core/Database");
 const StateCache = require("../normalizer/StateCache");
+const c = require("config");
 
 class StorageService {
   constructor() {
@@ -58,8 +59,9 @@ class StorageService {
    */
   handleData(suo) {
     try {
-      // DEBUG: Log SUO structure when received
-      console.log("[StorageService] handleData received SUO:", JSON.stringify(suo, null, 2));
+      //TEMP-DEBUG: Log SUO structure when received
+      console.log("[StorageService] handleData received SUO:");
+      console.log(suo);
 
       // Check if this message type should be stored
       if (this.config.filters && this.config.filters.length > 0) {
@@ -147,12 +149,12 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleRfidSnapshot(suo) {
-    const { deviceId, payload } = suo;
+    const { deviceId, moduleIndex, payload } = suo;
 
     // Buffer for storage (store as JSON)
     this.addToBatch("iot_rfid_snapshot", {
       device_id: deviceId,
-      module_index: payload[0]?.moduleIndex || 1,
+      module_index: moduleIndex || 1,
       rfid_snapshot: JSON.stringify(payload),
       parse_at: new Date(),
     });
@@ -277,8 +279,8 @@ class StorageService {
     const { deviceId, deviceType, payload, ip, mac, fwVer, mask, gwIp } = suo;
 
     // DEBUG: Log SUO structure to diagnose deviceType issue
-    console.log("[StorageService] handleDeviceMetadata SUO:", JSON.stringify(suo, null, 2));
-    console.log("[StorageService] deviceType value:", deviceType);
+    //console.log("[StorageService] handleDeviceMetadata SUO:", JSON.stringify(suo, null, 2));
+    //console.log("[StorageService] deviceType value:", deviceType);
 
     // Ensure all fields are defined to avoid undefined bindings
     // Use null for missing fields (HEARTBEAT messages may not have device-level metadata)
@@ -296,7 +298,8 @@ class StorageService {
     };
 
     // DEBUG: Log metadataData before upsert
-    console.log("[StorageService] metadataData:", JSON.stringify(metadataData, null, 2));
+    console.log("[StorageService] iot_meta_data:");
+    console.log(metadataData);
 
     // Use UPSERT (Insert on Duplicate Key Update)
     database.upsert(
@@ -365,11 +368,23 @@ class StorageService {
       return;
     }
 
+    // DEBUG: Log batch buffer contents before flushing
+    console.log("[StorageService] Batch buffer contents before flush:");
+    for (const [table, data] of this.batchBuffer.entries()) {
+      console.log(`  Table: ${table}, Records: ${data.length}`);
+    }
+
     try {
-      for (const [table, data] of this.batchBuffer.entries()) {
+      // Convert Map to Array to ensure consistent iteration order
+      const entries = Array.from(this.batchBuffer.entries());
+      
+      for (const [table, data] of entries) {
         if (data.length === 0) {
           continue;
         }
+
+        // DEBUG: Log table and data before flushing
+        console.log(`[StorageService] Flushing table: ${table}, data:`, data);
 
         try {
           await database.batchInsert(table, data);

@@ -108,6 +108,18 @@ class UnifyNormalizer {
     // Filter out invalid slots where moduleId == 0 (V5008)
     const validModules = data.filter((m) => m.moduleId && m.moduleId !== "0");
 
+    // Emit HEARTBEAT SUO for storage service
+    const heartbeatSuo = {
+      deviceId,
+      deviceType,
+      messageType: "HEARTBEAT",
+      messageId,
+      // moduleIndex and moduleId are not at top level for HEARTBEAT
+      // They are included in the payload for each module
+      payload: validModules,
+    };
+    eventBus.emitDataNormalized(heartbeatSuo);
+
     // Update cache for each module
     validModules.forEach((module) => {
       this.stateCache.updateHeartbeat(
@@ -139,15 +151,86 @@ class UnifyNormalizer {
    * @param {Object} sif - Standard Intermediate Format
    */
   handleRfidSnapshot(sif) {
-    const { deviceId, deviceType, messageId, data } = sif;
+    const { deviceId, deviceType, messageId, data, moduleIndex, moduleId } = sif;
     // Use SIF messageId for RFID_EVENT as well
     const rfidEventMessageId = messageId;
 
+    // Check if this is V5008 style (top-level fields merged into SIF)
+    const isV5008Style = moduleIndex !== undefined && moduleId !== undefined && data && Array.isArray(data);
+    
     // Check if data has nested structure (V6800) or flat structure (V5008)
     const hasNestedData =
       data && data.length > 0 && data[0].data && Array.isArray(data[0].data);
 
-    if (hasNestedData) {
+    if (isV5008Style) {
+      // V5008 style: top-level fields (moduleIndex, moduleId) are merged into SIF
+      // Get previous snapshot from cache
+      const previousSnapshot = this.stateCache.getRfidSnapshot(
+        deviceId,
+        moduleIndex,
+      );
+
+      // Normalize current snapshot (map uIndex to sensorIndex)
+      const currentSnapshot = data.map((item) => ({
+        moduleIndex,
+        moduleId,
+        sensorIndex: item.uIndex || item.sensorIndex,
+        tagId: item.tagId,
+        isAlarm: item.isAlarm || false,
+      }));
+
+      // Compare and emit events for differences
+      const events = this.diffRfidSnapshots(
+        previousSnapshot,
+        currentSnapshot,
+      );
+
+      if (events.length > 0) {
+        // Emit RFID_EVENT for each difference
+        events.forEach((event) => {
+          const eventSuo = this.createSuo({
+            deviceId,
+            deviceType,
+            messageType: "RFID_EVENT",
+            messageId: rfidEventMessageId,
+            moduleIndex: event.moduleIndex,
+            moduleId: event.moduleId,
+            payload: [
+              {
+                moduleIndex: event.moduleIndex,
+                moduleId: event.moduleId,
+                sensorIndex: event.sensorIndex,
+                tagId: event.tagId,
+                action: event.action,
+                isAlarm: event.isAlarm || false,
+              },
+            ],
+          });
+          eventBus.emitDataNormalized(eventSuo);
+        });
+      }
+
+      // Emit full RFID_SNAPSHOT SUO for database
+      const snapshotSuo = this.createSuo({
+        deviceId,
+        deviceType,
+        messageType: "RFID_SNAPSHOT",
+        messageId,
+        moduleIndex,
+        moduleId,
+        payload: currentSnapshot,
+      });
+      eventBus.emitDataNormalized(snapshotSuo);
+
+      // Update cache with new snapshot
+      this.stateCache.updateTelemetryField(
+        deviceId,
+        moduleIndex,
+        "rfid_snapshot",
+        currentSnapshot,
+        "lastSeen_rfid",
+      );
+    } else if (hasNestedData) {
       // V6800 style: nested structure with module.data containing array of readings
       data.forEach((moduleData) => {
         const { moduleIndex, moduleId, data: rfidData } = moduleData;
@@ -193,6 +276,8 @@ class UnifyNormalizer {
               moduleId: event.moduleId,
               payload: [
                 {
+                  moduleIndex: event.moduleIndex,
+                  moduleId: event.moduleId,
                   sensorIndex: event.sensorIndex,
                   tagId: event.tagId,
                   action: event.action,
@@ -270,6 +355,8 @@ class UnifyNormalizer {
             moduleId: event.moduleId,
             payload: [
                 {
+                  moduleIndex: event.moduleIndex,
+                  moduleId: event.moduleId,
                   sensorIndex: event.sensorIndex,
                   tagId: event.tagId,
                   action: event.action,
@@ -348,6 +435,8 @@ class UnifyNormalizer {
               moduleId: event.moduleId,
               payload: [
                 {
+                  moduleIndex: event.moduleIndex,
+                  moduleId: event.moduleId,
                   sensorIndex: event.sensorIndex,
                   tagId: event.tagId,
                   action: event.action,
@@ -731,6 +820,14 @@ class UnifyNormalizer {
       data.forEach((moduleData) => {
         const { moduleIndex, moduleId } = moduleData;
 
+        // Business logic validation: modAddr must be [1-5] and modId must not be 0
+        if (moduleIndex < 1 || moduleIndex > 5 || moduleId === "0") {
+          console.warn(
+            `[UnifyNormalizer] Invalid door state data for device ${deviceId}: moduleIndex=${moduleIndex}, moduleId=${moduleId}. Skipping.`
+          );
+          return;
+        }
+
         // Move door state fields into payload array
         const doorState = {
           doorState: moduleData.doorState || null,
@@ -761,6 +858,14 @@ class UnifyNormalizer {
     } else if (data && typeof data === 'object' && !Array.isArray(data)) {
       // V5008 style: object with top-level fields (moduleIndex, moduleId, doorState)
       const { moduleIndex, moduleId, doorState, door1State, door2State } = data;
+
+      // Business logic validation: modAddr must be [1-5] and modId must not be 0
+      if (moduleIndex < 1 || moduleIndex > 5 || moduleId === "0") {
+        console.warn(
+          `[UnifyNormalizer] Invalid door state data for device ${deviceId}: moduleIndex=${moduleIndex}, moduleId=${moduleId}. Skipping.`
+        );
+        return;
+      }
 
       // Move door state fields into payload array
       const doorStatePayload = {
@@ -1002,13 +1107,13 @@ class UnifyNormalizer {
             }))
           : [];
 
-      const metadataSuo = this.createSuo({
+      const metadataSuo = {
         deviceId,
         deviceType,
         messageType: "DEVICE_METADATA",
         messageId: messageId,
-        moduleIndex: 0, // Device-level
-        moduleId: "0",
+        // moduleIndex and moduleId are not at top level for DEVICE_METADATA
+        // They are included in payload for each module
         // Common fields (ensure all are defined to avoid undefined bindings)
         ip: sif.ip !== undefined ? sif.ip : null,
         mac: sif.mac !== undefined ? sif.mac : null,
@@ -1018,7 +1123,7 @@ class UnifyNormalizer {
         gwIp: sif.gwIp !== undefined ? sif.gwIp : null,
         // Payload with modules
         payload: activeModules,
-      });
+      };
 
       // DEBUG: Log SUO structure before emission
       //console.log(

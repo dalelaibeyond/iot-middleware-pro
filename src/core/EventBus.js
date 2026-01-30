@@ -30,8 +30,8 @@ class EventBus extends EventEmitter {
    */
   emitDataNormalized(suo) {
     //TEMP-DEBUG: Log SUO structure
-    console.log("[EventBus] emitDataNormalized SUO:\n");
-    console.log(suo);
+    //console.log("[EventBus] emitDataNormalized SUO:\n");
+    //console.log(suo);
     this.emit("data.normalized", suo);
   }
 

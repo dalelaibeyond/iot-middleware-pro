@@ -114,14 +114,14 @@ class Database {
     const connection = this.getConnection();
 
     // DEBUG: Log upsert parameters
-    console.log("[Database] upsert called with:");
-    console.log("  table:", table);
-    console.log("  data keys:", Object.keys(data));
-    console.log("  data values:", Object.values(data));
-    console.log("  uniqueKey:", uniqueKey);
+    //console.log("[Database] upsert called with:");
+    //console.log("  table:", table);
+    //console.log("  data keys:", Object.keys(data));
+    //console.log("  data values:", Object.values(data));
+    //console.log("  uniqueKey:", uniqueKey);
 
     const bindings = [table, ...Object.values(data)];
-    console.log("  bindings array:", bindings);
+    //console.log("  bindings array:", bindings);
 
     const result = await connection.raw(
       `

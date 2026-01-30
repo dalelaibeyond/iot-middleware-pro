@@ -68,9 +68,9 @@ The parser determines `messageType` using this strict precedence:
 | --- | --- | --- | --- |
 | **Common Fields** |  |  |  |
 | `DeviceId` | 4B | `deviceId` | **Context Dependent:**<br>1. Header `AA`: Bytes [1-4] → String.<br>2. Others: Extract from MQTT Topic. |
- | `MsgId` | 4B | `messageId` | Last 4 bytes of packet → Reading an Unsigned Big-Endian Integer from the Buffer.  → String |
-| `ModId` | 4B | `moduleId` | `uint32_be` → String. |
-| `ModAddr` | 1B | `moduleIndex` | `uint8` (Range 1-5). |
+| `MsgId` | 4B | `messageId` | Last 4 bytes of packet → String. Refer to Algorithm D |
+| `ModId` | 4B | `moduleId` | `uint32_be` → String. Refer to Algorithm D |
+| `ModAddr` | 1B | `moduleIndex` | `uint8` (Range 1-5). use `moduleIndex: modAddr` directly |
 | **Sensor Indices** |  |  |  |
 | `Addr` (Temp) | 1B | `thIndex` | `uint8` (Range 10-15). |
 | `Addr` (Noise) | 1B | `nsIndex` | `uint8` (Range 16-18). |
@@ -85,7 +85,7 @@ The parser determines `messageType` using this strict precedence:
 | `ColorCode` | 1B | - | Used in `data` array as integer. |
 | **Device Meta** |  |  |  |
 | `Model` | 2B | `model` | Hex String (Uppercase). |
-| `Fw` | 4B | `fwVer` | `uint32_be` → String. |
+| `Fw` | 4B | `fwVer` | `uint32_be` → String. Refer to Algorithm D |
 | `IP` | 4B | `ip` | Dot-notation String (e.g., "192.168.0.1"). |
 | `Mask` | 4B | `mask` | Dot-notation String. |
 | `Gw` | 4B | `gwIp` | Dot-notation String. |
@@ -152,6 +152,20 @@ return { originalReq: reqBuffer.toString('hex').toUpperCase(), moduleIndex };
 ```
 
 ---
+
+### **Algorithm D: Parsing 4-byte field** to **String**
+
+Read it as an **unsigned 32-bit integer in Big-Endian format** to get the same decimal value as Windows Calculator. For example, if buffer contains `27 00 DC F6`, it should return `654367990`. Use for  `ModId`, `MsgId` , `Fw`, `fwVer` .
+
+```markdown
+// Example: Raw message containing 4 bytes
+const message = Buffer.from([0x27, 0x00, 0xDC, 0xF6]);
+
+// Read as Unsigned 32-bit Integer, Big Endian (like Win 11 Calc)
+const decimalValue = message.readUInt32BE(0).toString(); 
+
+console.log(decimalValue); // Result: 654367990
+```
 
 ## 6. Message Structure Schemas (Binary Layout)
 
