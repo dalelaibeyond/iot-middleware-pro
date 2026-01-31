@@ -51,20 +51,106 @@ class V6800Parser {
    */
   parse(topic, message) {
     try {
+      // DEBUG: Entry point - message before parsing
+      console.log("=== V6800 PARSER START ===");
+      console.log("[V6800Parser] DEBUG - Entry point - Received topic:", topic);
+      console.log(
+        "[V6800Parser] DEBUG - Entry point - Message type:",
+        typeof message,
+      );
+      console.log(
+        "[V6800Parser] DEBUG - Entry point - Timestamp:",
+        new Date().toISOString(),
+      );
+
+      if (typeof message === "string") {
+        console.log(
+          "[V6800Parser] DEBUG - Entry point - Raw message string:",
+          message,
+        );
+      } else if (typeof message === "object") {
+        console.log(
+          "[V6800Parser] DEBUG - Entry point - Message object keys:",
+          Object.keys(message),
+        );
+      }
+      console.log("=== END V6800 PARSER ENTRY ===");
+
       // Parse JSON if message is a string
       let json;
       if (typeof message === "string") {
-        json = JSON.parse(message);
+        // Check if the message looks like a topic name instead of JSON
+        if (message.startsWith("V6800Upload")) {
+          console.error(
+            "V6800Parser: Received topic name instead of JSON payload:",
+            message,
+          );
+          console.error(
+            "This suggests an issue with message handling in MqttSubscriber",
+          );
+          return null;
+        }
+
+        try {
+          json = JSON.parse(message);
+        } catch (parseError) {
+          console.error(
+            "V6800Parser: Failed to parse JSON:",
+            parseError.message,
+          );
+          console.error("V6800Parser: Raw message content:", message);
+          return null;
+        }
       } else if (typeof message === "object" && message !== null) {
         json = message;
       } else {
-        console.error("V6800Parser: Invalid input, expected string or object");
+        console.error(
+          "V6800Parser: Invalid input, expected string or object, got:",
+          typeof message,
+        );
         return null;
       }
 
       // Extract message type
+      console.log("=== V6800 PARSER MESSAGE TYPE ===");
+      console.log(
+        "[V6800Parser] DEBUG - Full JSON object:",
+        JSON.stringify(json, null, 2),
+      );
+
       const rawType = json.msg_type;
-      const messageType = this.messageTypeMap[rawType] || "UNKNOWN";
+
+      console.log("[V6800Parser] DEBUG - rawType:", rawType);
+      console.log(
+        "[V6800Parser] DEBUG - messageTypeMap entry:",
+        this.messageTypeMap[rawType],
+      );
+
+      let messageType = this.messageTypeMap[rawType] || "UNKNOWN";
+      console.log("=== END V6800 PARSER MESSAGE TYPE ===");
+
+      // Additional defensive check - if msg_type is undefined, check if it might be in a different field
+      if (!rawType && json.msg_type !== undefined) {
+        console.log(
+          "[V6800Parser] WARNING - msg_type is undefined, checking alternative fields...",
+        );
+        // Check common alternative field names that might contain the message type
+        const alternatives = ["message_type", "type", "messageType", "cmd"];
+        for (const alt of alternatives) {
+          if (json[alt] !== undefined) {
+            console.log(
+              `[V6800Parser] Found message type in alternative field: ${alt} = ${json[alt]}`,
+            );
+            rawType = json[alt];
+            messageType = this.messageTypeMap[rawType] || "UNKNOWN";
+            break;
+          }
+        }
+      }
+
+      console.log("=== V6800 PARSER FINAL MESSAGE TYPE ===");
+      console.log("[V6800Parser] DEBUG - final messageType:", messageType);
+      console.log("=== END V6800 PARSER FINAL MESSAGE TYPE ===");
 
       // Extract common envelope fields
       const deviceId = this.extractDeviceId(json);
@@ -96,9 +182,17 @@ class V6800Parser {
         sif.data = data;
       }
 
+      //TEMP-DEBUG
+      //console.log("=== V6800 PARSER RESULT ===");
+      console.log("[V6800Parser] Parsed SIF result:\n", sif);
+      //console.log(JSON.stringify(sif, null, 2));
+      //console.log("=== END V6800 PARSER RESULT ===");
+
       return sif;
     } catch (error) {
+      console.error("=== V6800 PARSER ERROR ===");
       console.error(`V6800Parser error:`, error.message);
+      console.error("=== END V6800 PARSER ERROR ===");
       return null;
     }
   }
@@ -163,6 +257,14 @@ class V6800Parser {
         return this.parseClnAlmResp(json);
       default:
         // Unknown message type - preserve raw payload
+        console.log("=== V6800 PARSER UNKNOWN MESSAGE TYPE ===");
+        console.log("[V6800Parser] DEBUG - Unknown message type detected!");
+        console.log("[V6800Parser] DEBUG - rawType:", rawType);
+        console.log(
+          "[V6800Parser] DEBUG - Available message types:",
+          Object.keys(this.messageTypeMap),
+        );
+        console.log("=== END V6800 PARSER UNKNOWN MESSAGE TYPE ===");
         return json;
     }
   }
