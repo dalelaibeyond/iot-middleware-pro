@@ -342,9 +342,17 @@ class V6800Parser {
             const thIndex =
               thItem.temper_position !== undefined ? thItem.temper_position : 0;
             const temp =
-              thItem.temper_swot !== undefined ? thItem.temper_swot : 0;
+              thItem.temper_swot !== undefined
+                ? thItem.temper_swot === 0
+                  ? null
+                  : thItem.temper_swot
+                : null;
             const hum =
-              thItem.hygrometer_swot !== undefined ? thItem.hygrometer_swot : 0;
+              thItem.hygrometer_swot !== undefined
+                ? thItem.hygrometer_swot === 0
+                  ? null
+                  : thItem.hygrometer_swot
+                : null;
 
             thData.push({
               thIndex: thIndex,
@@ -519,7 +527,8 @@ class V6800Parser {
 
         if (moduleItem.data && Array.isArray(moduleItem.data)) {
           moduleItem.data.forEach((colorItem) => {
-            const uIndex = colorItem.u_index !== undefined ? colorItem.u_index : 0;
+            const uIndex =
+              colorItem.u_index !== undefined ? colorItem.u_index : 0;
             const colorName =
               colorItem.color !== undefined ? String(colorItem.color) : "";
             const colorCode = colorItem.code !== undefined ? colorItem.code : 0;

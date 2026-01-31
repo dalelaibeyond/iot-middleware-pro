@@ -32,12 +32,9 @@ class V5008Parser {
    * @returns {Object|null} SIF (Standard Intermediate Format) or null if parse fails
    */
   parse(buffer, metadata) {
-
-
-        //TEMP-DEBUG
-        //console.log("[V5008Parser] Raw Hex:\n");
-        //console.log({topic:metadata.topic, rawHex:buffer.toString('hex').toUpperCase()});
-        
+    //TEMP-DEBUG
+    //console.log("[V5008Parser] Raw Hex:\n");
+    //console.log({topic:metadata.topic, rawHex:buffer.toString('hex').toUpperCase()});
 
     try {
       if (!Buffer.isBuffer(buffer)) {
@@ -71,7 +68,11 @@ class V5008Parser {
 
       // For messages that return objects with top-level fields (RFID_SNAPSHOT, TEMP_HUM, NOISE_LEVEL, QRY_CLR_RESP)
       // merge those fields into the SIF and keep the data array
-      if (parsedData && typeof parsedData === 'object' && !Array.isArray(parsedData)) {
+      if (
+        parsedData &&
+        typeof parsedData === "object" &&
+        !Array.isArray(parsedData)
+      ) {
         Object.assign(sif, parsedData);
       } else {
         // For messages that return arrays (HEARTBEAT, MODULE_INFO)
@@ -79,7 +80,7 @@ class V5008Parser {
       }
 
       //TEMP-DEBUG
-      console.log("[V5008Parser] Parsed SIF:\n");
+      console.log("[V5008Parser] Parsed SIF:");
       console.log(sif);
 
       return sif;
@@ -229,9 +230,15 @@ class V5008Parser {
    * Binary Input: [IntegerByte, FractionByte]
    * @param {number} integerByte - Integer part of value
    * @param {number} fractionByte - Fraction part of value
-   * @returns {number} Parsed float value
+   * @returns {number|null} Parsed float value, or null if raw value is 0x00
    */
   parseSignedFloat(integerByte, fractionByte) {
+    // Check if both bytes are exactly 0x00 (Zero)
+    // If so, return null instead of 0
+    if (integerByte === 0x00 && fractionByte === 0x00) {
+      return null;
+    }
+
     // 1. Check Sign Bit (Two's Complement)
     let signedInt =
       integerByte & 0x80 ? (0xff - integerByte + 1) * -1 : integerByte;
@@ -516,16 +523,16 @@ class V5008Parser {
    */
   parseDeviceInfo(buffer) {
     const model = buffer.slice(2, 4).toString("hex").toUpperCase();
-    const fw = buffer.readUInt32BE(6);
-    const ip = this.parseIp(buffer, 10);
-    const mask = this.parseIp(buffer, 14);
-    const gwIp = this.parseIp(buffer, 18);
-    const mac = this.parseMac(buffer, 22);
+    const fw = buffer.readUInt32BE(4).toString();
+    const ip = this.parseIp(buffer, 8);
+    const mask = this.parseIp(buffer, 12);
+    const gwIp = this.parseIp(buffer, 16);
+    const mac = this.parseMac(buffer, 20);
 
     // Return object with top-level fields (per spec, NO data array)
     return {
       model: model,
-      fwVer: fw.toString(),
+      fwVer: fw,
       ip: ip,
       mask: mask,
       gwIp: gwIp,

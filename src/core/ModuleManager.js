@@ -50,6 +50,7 @@ class ModuleManager {
     const initOrder = [
       "database",
       "eventBus",
+      "stateCache",
       "mqttSubscriber",
       "parserManager",
       "normalizer",

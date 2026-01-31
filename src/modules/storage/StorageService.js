@@ -60,7 +60,7 @@ class StorageService {
   handleData(suo) {
     try {
       //TEMP-DEBUG: Log SUO structure when received
-      console.log("[StorageService] handleData received SUO:");
+      console.log("[StorageService] Received SUO:");
       console.log(suo);
 
       // Check if this message type should be stored
@@ -132,7 +132,7 @@ class StorageService {
         deviceId,
         item.moduleIndex,
         item.moduleId,
-        item.uTotal
+        item.uTotal,
       );
     });
 
@@ -186,32 +186,24 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleTempHum(suo) {
-    const { deviceId, payload } = suo;
+    const { deviceId, moduleIndex, payload } = suo;
 
-    // Group by module index
-    const byModule = new Map();
+    // moduleIndex is now at SUO top level (not in payload items)
+    // Pivot: map sensorIndex to temp_indexXX and hum_indexXX
+    const pivotedData = {};
     payload.forEach((item) => {
-      const key = item.moduleIndex;
-      if (!byModule.has(key)) {
-        byModule.set(key, {});
-      }
-      const moduleData = byModule.get(key);
-
-      // Pivot: map sensorIndex to temp_indexXX and hum_indexXX
       if (item.sensorIndex >= 10 && item.sensorIndex <= 15) {
-        moduleData[`temp_index${item.sensorIndex}`] = item.temp;
-        moduleData[`hum_index${item.sensorIndex}`] = item.hum;
+        pivotedData[`temp_index${item.sensorIndex}`] = item.temp;
+        pivotedData[`hum_index${item.sensorIndex}`] = item.hum;
       }
     });
 
     // Insert one row per module
-    byModule.forEach((data, moduleIndex) => {
-      this.addToBatch("iot_temp_hum", {
-        device_id: deviceId,
-        module_index: moduleIndex,
-        ...data,
-        parse_at: new Date(),
-      });
+    this.addToBatch("iot_temp_hum", {
+      device_id: deviceId,
+      module_index: moduleIndex,
+      ...pivotedData,
+      parse_at: new Date(),
     });
   }
 
@@ -220,33 +212,23 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleNoiseLevel(suo) {
-    const { deviceId, payload } = suo;
+    const { deviceId, moduleIndex, payload } = suo;
 
-    // Group by module index
-    const byModule = new Map();
+    // moduleIndex is now at SUO top level (not in payload items)
+    // Pivot: map sensorIndex to noise_indexXX (indices 16-18)
+    const pivotedData = {};
     payload.forEach((item) => {
-      const key = item.moduleIndex;
-      if (!byModule.has(key)) {
-        byModule.set(key, {});
-      }
-      const moduleData = byModule.get(key);
-
-      // Pivot: map sensorIndex to noise_indexXX (indices 16-18)
-      // Note: Do not insert NULL explicitly for missing indices;
-      // let the Database default handle missing columns
       if (item.sensorIndex >= 16 && item.sensorIndex <= 18) {
-        moduleData[`noise_index${item.sensorIndex}`] = item.noise;
+        pivotedData[`noise_index${item.sensorIndex}`] = item.noise;
       }
     });
 
     // Insert one row per module
-    byModule.forEach((data, moduleIndex) => {
-      this.addToBatch("iot_noise_level", {
-        device_id: deviceId,
-        module_index: moduleIndex,
-        ...data,
-        parse_at: new Date(),
-      });
+    this.addToBatch("iot_noise_level", {
+      device_id: deviceId,
+      module_index: moduleIndex,
+      ...pivotedData,
+      parse_at: new Date(),
     });
   }
 
@@ -255,14 +237,14 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleDoorState(suo) {
-    const { deviceId, payload } = suo;
+    const { deviceId, moduleIndex, payload } = suo;
 
     // Read the first item in the payload array
     if (payload.length > 0) {
       const item = payload[0];
       this.addToBatch("iot_door_event", {
         device_id: deviceId,
-        module_index: item.moduleIndex,
+        module_index: moduleIndex,
         doorState: item.doorState,
         door1State: item.door1State,
         door2State: item.door2State,
@@ -297,16 +279,12 @@ class StorageService {
       update_at: new Date(),
     };
 
-    // DEBUG: Log metadataData before upsert
-    console.log("[StorageService] iot_meta_data:");
-    console.log(metadataData);
+    //DEBUG: Log metadataData before upsert
+    //console.log("[StorageService] iot_meta_data:");
+    //console.log(metadataData);
 
     // Use UPSERT (Insert on Duplicate Key Update)
-    database.upsert(
-      "iot_meta_data",
-      metadataData,
-      "device_id",
-    );
+    database.upsert("iot_meta_data", metadataData, "device_id");
   }
 
   /**
@@ -369,26 +347,27 @@ class StorageService {
     }
 
     // DEBUG: Log batch buffer contents before flushing
-    console.log("[StorageService] Batch buffer contents before flush:");
-    for (const [table, data] of this.batchBuffer.entries()) {
-      console.log(`  Table: ${table}, Records: ${data.length}`);
-    }
+    //console.log("[StorageService] Batch buffer contents before flush:");
+    //for (const [table, data] of this.batchBuffer.entries()) {
+    //  console.log(`  Table: ${table}, Records: ${data.length}`);
+    //}
 
     try {
       // Convert Map to Array to ensure consistent iteration order
       const entries = Array.from(this.batchBuffer.entries());
-      
+
       for (const [table, data] of entries) {
         if (data.length === 0) {
           continue;
         }
 
         // DEBUG: Log table and data before flushing
-        console.log(`[StorageService] Flushing table: ${table}, data:`, data);
+        console.log(`[StorageService] Flushing table: ${table}, data:`);
+        console.log(data);
 
         try {
           await database.batchInsert(table, data);
-          console.log(`Flushed ${data.length} records to ${table}`);
+          //console.log(`Flushed ${data.length} records to ${table}`);
         } catch (error) {
           console.error(`Failed to flush to ${table}:`, error.message);
           eventBus.emitError(error, "StorageService");

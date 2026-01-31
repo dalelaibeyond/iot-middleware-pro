@@ -37,6 +37,9 @@ class CommandService {
 
     const mqttConfig = require("config").get("mqtt");
 
+    // Store mqttConfig as instance property for use in handleCommandRequest
+    this.mqttConfig = mqttConfig;
+
     console.log(
       `Connecting to MQTT broker for commands: ${mqttConfig.brokerUrl}`,
     );
@@ -110,7 +113,7 @@ class CommandService {
       const mqttPayload = this.buildPayload(messageType, payload);
 
       // Publish to download topic
-      const downloadTopic = `${mqttConfig.downloadTopic}/${deviceId}`;
+      const downloadTopic = `${this.mqttConfig.downloadTopic}/${deviceId}`;
 
       this.client.publish(
         downloadTopic,
