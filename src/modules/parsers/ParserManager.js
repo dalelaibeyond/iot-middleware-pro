@@ -81,10 +81,11 @@ class ParserManager {
       } else {
         // V6800 uses JSON payload
         // Debug logging for V6800 messages
-        console.log("[ParserManager] V6800 Device ID:", deviceId);
-        console.log("[ParserManager] V6800 Topic:", topic);
-        console.log("[ParserManager] V6800 Payload type:", typeof payload);
-        console.log("[ParserManager] V6800 Payload:", payload);
+        //console.log("[ParserManager] V6800 Device ID:", deviceId);
+        //console.log("[ParserManager] V6800 Topic:", topic);
+        //console.log("[ParserManager] V6800 Payload type:", typeof payload);
+        console.log("#######[ParserManager] V6800 topic:", topic);
+        console.log("#######[ParserManager] V6800 raw:\n", payload);
 
         sif = parser.parse(topic, payload);
       }

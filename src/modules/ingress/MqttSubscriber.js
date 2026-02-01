@@ -66,29 +66,6 @@ class MqttSubscriber {
     });
 
     this.client.on("message", (topic, message) => {
-      // DEBUG: Message received from broker
-      //console.log("=== MQTT MESSAGE RECEIVED ===");
-      //console.log("[MqttSubscriber] DEBUG - Received message on topic:", topic);
-      //onsole.log("[MqttSubscriber] DEBUG - Message type:", typeof message);
-      //console.log("[MqttSubscriber] DEBUG - Message length:", message.length);
-      //console.log(
-      //  "[MqttSubscriber] DEBUG - Timestamp:",
-      //  new Date().toISOString(),
-      //);
-
-      const messageString = message.toString();
-      if (topic.includes("V6800")) {
-        //TEMP-DEBUG
-        console.log("[MqttSubscriber] DEBUG - V6800 Raw message:");
-        console.log(messageString);
-      } else {
-        console.log(
-          "[MqttSubscriber] DEBUG - V5008 Raw message (hex):",
-          message.toString("hex").toUpperCase(),
-        );
-      }
-      console.log("=== END MQTT MESSAGE ===");
-
       this.handleMessage(topic, message);
     });
 

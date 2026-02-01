@@ -58,6 +58,7 @@ class UnifyNormalizer {
           this.handleRfidEvent(sif);
           break;
         case "TEMP_HUM":
+        case "QRY_TEMP_HUM_RESP":
           this.handleTempHum(sif);
           break;
         case "NOISE_LEVEL":
@@ -65,6 +66,9 @@ class UnifyNormalizer {
           break;
         case "DOOR_STATE":
           this.handleDoorState(sif);
+          break;
+        case "QRY_DOOR_STATE_RESP":
+          this.handleDoorStateQuery(sif);
           break;
         case "DEVICE_INFO":
         case "MODULE_INFO":
@@ -1186,6 +1190,60 @@ class UnifyNormalizer {
   }
 
   /**
+   * Handle QRY_DOOR_STATE_RESP message
+   * @param {Object} sif - Standard Intermediate Format
+   */
+  handleDoorStateQuery(sif) {
+    const { deviceId, deviceType, messageId, data } = sif;
+
+    // QRY_DOOR_STATE_RESP has a different structure than DOOR_STATE
+    // It contains moduleIndex and moduleId at the top level of data
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const { moduleIndex, moduleId, doorState, door1State, door2State } = data;
+
+      // Business logic validation: modAddr must be [1-5] and modId must not be 0
+      if (moduleIndex < 1 || moduleIndex > 5 || moduleId === "0") {
+        console.warn(
+          `[UnifyNormalizer] Invalid door state query response for device ${deviceId}: moduleIndex=${moduleIndex}, moduleId=${moduleId}. Skipping.`,
+        );
+        return;
+      }
+
+      // Move door state fields into payload array
+      const doorStatePayload = {
+        doorState: doorState || null,
+        door1State: door1State || null,
+        door2State: door2State || null,
+      };
+
+      const suo = this.createSuo({
+        deviceId,
+        deviceType,
+        messageType: "DOOR_STATE",
+        messageId,
+        moduleIndex,
+        moduleId,
+        payload: [doorStatePayload],
+      });
+      eventBus.emitDataNormalized(suo);
+
+      // Update cache
+      const telemetry =
+        this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
+      telemetry.doorState = doorStatePayload.doorState;
+      telemetry.door1State = doorStatePayload.door1State;
+      telemetry.door2State = doorStatePayload.door2State;
+      telemetry.lastSeen_door = new Date().toISOString();
+      this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
+    } else {
+      console.warn(
+        `[UnifyNormalizer] Invalid or missing door state query response data for device ${deviceId}`,
+      );
+      return;
+    }
+  }
+
+  /**
    * Handle metadata messages (DEVICE_INFO, MODULE_INFO, DEV_MOD_INFO)
    * @param {Object} sif - Standard Intermediate Format
    */
@@ -1356,7 +1414,7 @@ class UnifyNormalizer {
         moduleId: item.moduleId || null,
         result: item.result || null,
         originalReq: item.originalReq || null,
-        colorMap: item.colorMap || null,
+        colorMap: item.data || item.colorMap || null, // Check for both possible field names
       }));
 
       const suo = this.createSuo({

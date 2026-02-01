@@ -52,29 +52,10 @@ class V6800Parser {
   parse(topic, message) {
     try {
       // DEBUG: Entry point - message before parsing
-      console.log("=== V6800 PARSER START ===");
-      console.log("[V6800Parser] DEBUG - Entry point - Received topic:", topic);
-      console.log(
-        "[V6800Parser] DEBUG - Entry point - Message type:",
-        typeof message,
-      );
-      console.log(
-        "[V6800Parser] DEBUG - Entry point - Timestamp:",
-        new Date().toISOString(),
-      );
-
-      if (typeof message === "string") {
-        console.log(
-          "[V6800Parser] DEBUG - Entry point - Raw message string:",
-          message,
-        );
-      } else if (typeof message === "object") {
-        console.log(
-          "[V6800Parser] DEBUG - Entry point - Message object keys:",
-          Object.keys(message),
-        );
-      }
-      console.log("=== END V6800 PARSER ENTRY ===");
+      // console.log(
+      //   "[V6800Parser] DEBUG - Received message for parsing, topic:",
+      //   topic,
+      // );
 
       // Parse JSON if message is a string
       let json;
@@ -112,22 +93,15 @@ class V6800Parser {
       }
 
       // Extract message type
-      console.log("=== V6800 PARSER MESSAGE TYPE ===");
-      console.log(
-        "[V6800Parser] DEBUG - Full JSON object:",
-        JSON.stringify(json, null, 2),
-      );
-
       const rawType = json.msg_type;
-
-      console.log("[V6800Parser] DEBUG - rawType:", rawType);
-      console.log(
-        "[V6800Parser] DEBUG - messageTypeMap entry:",
-        this.messageTypeMap[rawType],
-      );
-
       let messageType = this.messageTypeMap[rawType] || "UNKNOWN";
-      console.log("=== END V6800 PARSER MESSAGE TYPE ===");
+
+      // console.log(
+      //   "[V6800Parser] DEBUG - Processing message type:",
+      //   rawType,
+      //   "->",
+      //   messageType,
+      // );
 
       // Additional defensive check - if msg_type is undefined, check if it might be in a different field
       if (!rawType && json.msg_type !== undefined) {
@@ -147,10 +121,6 @@ class V6800Parser {
           }
         }
       }
-
-      console.log("=== V6800 PARSER FINAL MESSAGE TYPE ===");
-      console.log("[V6800Parser] DEBUG - final messageType:", messageType);
-      console.log("=== END V6800 PARSER FINAL MESSAGE TYPE ===");
 
       // Extract common envelope fields
       const deviceId = this.extractDeviceId(json);
@@ -182,17 +152,16 @@ class V6800Parser {
         sif.data = data;
       }
 
-      //TEMP-DEBUG
-      //console.log("=== V6800 PARSER RESULT ===");
-      console.log("[V6800Parser] Parsed SIF result:\n", sif);
-      //console.log(JSON.stringify(sif, null, 2));
-      //console.log("=== END V6800 PARSER RESULT ===");
+      // console.log(
+      //   "[V6800Parser] DEBUG - Successfully parsed message, type:",
+      //   sif.messageType,
+      // );
+
+      console.log("##[V6800Parser] parsed sif:", sif);
 
       return sif;
     } catch (error) {
-      console.error("=== V6800 PARSER ERROR ===");
       console.error(`V6800Parser error:`, error.message);
-      console.error("=== END V6800 PARSER ERROR ===");
       return null;
     }
   }
@@ -207,8 +176,12 @@ class V6800Parser {
     if (json.msg_type === "heart_beat_req" && json.module_type === "mt_gw") {
       return json.module_sn ? String(json.module_sn) : "";
     }
-    // Default: use gateway_sn
-    return json.gateway_sn ? String(json.gateway_sn) : "";
+    // Check for both possible field names: gateway_sn and gateway_id
+    return json.gateway_sn
+      ? String(json.gateway_sn)
+      : json.gateway_id
+        ? String(json.gateway_id)
+        : "";
   }
 
   /**
@@ -257,14 +230,7 @@ class V6800Parser {
         return this.parseClnAlmResp(json);
       default:
         // Unknown message type - preserve raw payload
-        console.log("=== V6800 PARSER UNKNOWN MESSAGE TYPE ===");
-        console.log("[V6800Parser] DEBUG - Unknown message type detected!");
-        console.log("[V6800Parser] DEBUG - rawType:", rawType);
-        console.log(
-          "[V6800Parser] DEBUG - Available message types:",
-          Object.keys(this.messageTypeMap),
-        );
-        console.log("=== END V6800 PARSER UNKNOWN MESSAGE TYPE ===");
+        console.log("[V6800Parser] DEBUG - Unknown message type:", messageType);
         return json;
     }
   }
@@ -309,8 +275,11 @@ class V6800Parser {
 
         const rfidData = [];
 
-        if (moduleItem.data && Array.isArray(moduleItem.data)) {
-          moduleItem.data.forEach((rfidItem) => {
+        // Check for both possible field names: data and u_data
+        const dataArray = moduleItem.data || moduleItem.u_data;
+
+        if (dataArray && Array.isArray(dataArray)) {
+          dataArray.forEach((rfidItem) => {
             const tagId = rfidItem.tag_code;
 
             // Filter out RFID items with null/empty tag_code
@@ -439,8 +408,11 @@ class V6800Parser {
 
         const thData = [];
 
-        if (moduleItem.data && Array.isArray(moduleItem.data)) {
-          moduleItem.data.forEach((thItem) => {
+        // Check for both possible field names: 'data' and 'th_data'
+        const dataArray = moduleItem.data || moduleItem.th_data;
+
+        if (dataArray && Array.isArray(dataArray)) {
+          dataArray.forEach((thItem) => {
             const thIndex =
               thItem.temper_position !== undefined ? thItem.temper_position : 0;
             const temp =
@@ -527,8 +499,12 @@ class V6800Parser {
       moduleId: "",
     };
 
-    // Extract module info from data array (first item)
+    // Handle two possible formats:
+    // 1. Data array format (standard V6800 response)
+    // 2. Top-level fields format (direct response)
+
     if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+      // Standard format with data array
       const item = json.data[0];
       result.moduleIndex = this.extractModuleIndex(item);
       result.moduleId = this.extractModuleId(item);
@@ -544,6 +520,23 @@ class V6800Parser {
       } else if (item.new_state !== undefined) {
         // Single door
         result.doorState = item.new_state;
+      }
+    } else {
+      // Direct response format with top-level fields
+      result.moduleIndex = this.extractModuleIndex(json);
+      result.moduleId = this.extractModuleId(json);
+
+      // Check for dual door
+      if (json.new_state1 !== undefined || json.new_state2 !== undefined) {
+        if (json.new_state1 !== undefined) {
+          result.door1State = json.new_state1;
+        }
+        if (json.new_state2 !== undefined) {
+          result.door2State = json.new_state2;
+        }
+      } else if (json.new_state !== undefined) {
+        // Single door
+        result.doorState = json.new_state;
       }
     }
 
@@ -623,12 +616,19 @@ class V6800Parser {
         const moduleIndex = this.extractModuleIndex(moduleItem);
         const moduleId = this.extractModuleId(moduleItem);
         const uTotal =
-          moduleItem.module_u_num !== undefined ? moduleItem.module_u_num : 0;
+          moduleItem.module_u_num !== undefined
+            ? moduleItem.module_u_num
+            : moduleItem.u_num !== undefined
+              ? moduleItem.u_num
+              : 0;
 
         const colorData = [];
 
-        if (moduleItem.data && Array.isArray(moduleItem.data)) {
-          moduleItem.data.forEach((colorItem) => {
+        // Check for both possible field names: data and color_data
+        const dataArray = moduleItem.data || moduleItem.color_data;
+
+        if (dataArray && Array.isArray(dataArray)) {
+          dataArray.forEach((colorItem) => {
             const uIndex =
               colorItem.u_index !== undefined ? colorItem.u_index : 0;
             const colorName =
@@ -648,6 +648,7 @@ class V6800Parser {
           moduleId: moduleId,
           uTotal: uTotal,
           data: colorData,
+          result: "Success", // Default result for query responses
         });
       });
     }
@@ -667,7 +668,22 @@ class V6800Parser {
       json.data.forEach((item) => {
         const moduleIndex = this.extractModuleIndex(item);
         const moduleId = this.extractModuleId(item);
-        const result = item.result !== undefined ? String(item.result) : "";
+
+        // Handle both possible field names: 'result' and 'set_property_result'
+        let rawResult =
+          item.result !== undefined ? item.result : item.set_property_result;
+
+        // Convert numeric result to string (0 -> 'Success', 1 -> 'Failure')
+        let result = "";
+        if (rawResult !== undefined && rawResult !== null) {
+          if (rawResult === 0) {
+            result = "Success";
+          } else if (rawResult === 1) {
+            result = "Failure";
+          } else {
+            result = String(rawResult);
+          }
+        }
 
         data.push({
           moduleIndex: moduleIndex,
@@ -693,13 +709,24 @@ class V6800Parser {
         const moduleIndex = this.extractModuleIndex(item);
         const moduleId = this.extractModuleId(item);
         const uTotal = item.module_u_num !== undefined ? item.module_u_num : 0;
-        const result = item.result !== undefined ? Boolean(item.result) : false;
+
+        // Handle both possible field names: 'result' and 'ctr_flag'
+        let rawResult = item.result !== undefined ? item.result : item.ctr_flag;
+
+        // Convert to boolean and then to string for consistency
+        let result = false;
+        if (rawResult !== undefined && rawResult !== null) {
+          result = Boolean(rawResult);
+        }
+
+        // Convert boolean to string for database consistency
+        const resultStr = result ? "Success" : "Failure";
 
         data.push({
           moduleIndex: moduleIndex,
           moduleId: moduleId,
           uTotal: uTotal,
-          result: result,
+          result: resultStr,
         });
       });
     }
@@ -720,6 +747,9 @@ class V6800Parser {
     if (item.host_gateway_port_index !== undefined) {
       return item.host_gateway_port_index;
     }
+    if (item.index !== undefined) {
+      return item.index;
+    }
     return 0;
   }
 
@@ -735,6 +765,9 @@ class V6800Parser {
     }
     if (item.extend_module_sn !== undefined) {
       return String(item.extend_module_sn);
+    }
+    if (item.module_id !== undefined) {
+      return String(item.module_id);
     }
     return "";
   }

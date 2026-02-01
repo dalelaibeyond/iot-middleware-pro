@@ -94,6 +94,8 @@ class StorageService {
           this.handleDeviceMetadata(suo);
           break;
         case "QRY_CLR_RESP":
+        case "SET_CLR_RESP":
+        case "CLN_ALM_RESP":
           this.handleCmdResult(suo);
           break;
         case "META_CHANGED_EVENT":
