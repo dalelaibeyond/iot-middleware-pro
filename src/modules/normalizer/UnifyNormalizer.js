@@ -141,12 +141,19 @@ class UnifyNormalizer {
     // fwVer will be preserved from cache (MODULE_INFO/DEVICE_INFO messages)
     const metadata = {
       deviceType,
-      activeModules: validModules.map((m) => ({
-        moduleIndex: m.moduleIndex,
-        moduleId: m.moduleId,
-        fwVer: m.fwVer, // Don't force null if not present
-        uTotal: m.uTotal,
-      })),
+      activeModules: validModules.map((m) => {
+        const moduleData = {
+          moduleIndex: m.moduleIndex,
+          moduleId: m.moduleId,
+          uTotal: m.uTotal,
+        };
+        // Only include fwVer if it exists in the incoming data
+        // This prevents undefined from being set, which becomes null in JSON
+        if (m.fwVer !== undefined) {
+          moduleData.fwVer = m.fwVer;
+        }
+        return moduleData;
+      }),
     };
     const changes = this.stateCache.mergeMetadata(deviceId, metadata);
 
@@ -1283,12 +1290,19 @@ class UnifyNormalizer {
       // MODULE_INFO: Updates module-level fwVer based on moduleIndex (no device-level fields)
       const activeModules =
         data && Array.isArray(data)
-          ? data.map((m) => ({
-              moduleIndex: m.moduleIndex,
-              moduleId: null, // MODULE_INFO doesn't have moduleId
-              fwVer: m.fwVer, // Module-level firmware
-              uTotal: null, // MODULE_INFO doesn't have uTotal
-            }))
+          ? data.map((m) => {
+              const moduleData = {
+                moduleIndex: m.moduleIndex,
+                moduleId: null, // MODULE_INFO doesn't have moduleId
+                fwVer: m.fwVer, // Module-level firmware
+              };
+              // Only include uTotal if it exists in the incoming data
+              // This prevents null from overwriting existing uTotal value
+              if (m.uTotal !== undefined) {
+                moduleData.uTotal = m.uTotal;
+              }
+              return moduleData;
+            })
           : [];
 
       const incomingMetadata = {
