@@ -21,7 +21,7 @@ class WebSocketServer {
    */
   async initialize(config) {
     this.config = config;
-    console.log("WebSocketServer initialized");
+    console.log("  WebSocketServer initialized");
   }
 
   /**

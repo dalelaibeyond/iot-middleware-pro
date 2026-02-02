@@ -22,7 +22,7 @@ class V5008Parser {
    */
   async initialize(config) {
     this.config = config;
-    console.log("V5008Parser initialized");
+    console.log("  V5008Parser initialized");
   }
 
   /**

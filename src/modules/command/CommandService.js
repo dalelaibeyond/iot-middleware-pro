@@ -22,7 +22,7 @@ class CommandService {
    */
   async initialize(config) {
     this.config = config;
-    console.log("CommandService initialized");
+    console.log("  CommandService initialized");
   }
 
   /**

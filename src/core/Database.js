@@ -42,9 +42,9 @@ class Database {
     // Test connection
     try {
       await this.pool.raw("SELECT 1");
-      console.log("Database connection established");
+      console.log("  Database connection established");
     } catch (error) {
-      console.error("Database connection failed:", error);
+      console.error("  Database connection failed:", error);
       throw error;
     }
   }
@@ -68,7 +68,7 @@ class Database {
     if (this.pool) {
       await this.pool.destroy();
       this.pool = null;
-      console.log("Database connection closed");
+      console.log("  Database connection closed");
     }
   }
 

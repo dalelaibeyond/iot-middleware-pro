@@ -25,7 +25,7 @@ class StorageService {
    */
   async initialize(config) {
     this.config = config;
-    console.log("StorageService initialized");
+    console.log("  StorageService initialized");
   }
 
   /**

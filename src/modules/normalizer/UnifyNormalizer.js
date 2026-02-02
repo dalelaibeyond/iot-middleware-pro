@@ -22,7 +22,7 @@ class UnifyNormalizer {
    */
   async initialize(config) {
     this.config = config;
-    console.log("UnifyNormalizer initialized");
+    console.log("  UnifyNormalizer initialized");
   }
 
   /**

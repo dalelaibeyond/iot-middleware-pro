@@ -30,7 +30,7 @@ class StateCache {
    */
   async initialize(config) {
     this.config = config;
-    console.log("StateCache initialized");
+    console.log("  StateCache initialized");
   }
 
   /**

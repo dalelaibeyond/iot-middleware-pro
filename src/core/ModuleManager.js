@@ -75,9 +75,10 @@ class ModuleManager {
         }
 
         try {
-          console.log(`  [INIT] ${moduleName}...`);
+          console.log(`  [INIT]: ${moduleName}...`);
+          //process.stdout.write("     ");
           await module.initialize(moduleConfig);
-          console.log(`  [OK] ${moduleName}`);
+          console.log(`  [OK]: ${moduleName}`);
         } catch (error) {
           console.error(`  [FAILED] ${moduleName}:`, error.message);
           throw error;

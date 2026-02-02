@@ -21,7 +21,7 @@ class MqttRelay {
    */
   async initialize(config) {
     this.config = config;
-    console.log("MqttRelay initialized");
+    console.log("  MqttRelay initialized");
   }
 
   /**

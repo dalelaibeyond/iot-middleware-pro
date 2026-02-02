@@ -23,7 +23,7 @@ class MqttSubscriber {
    */
   async initialize(config) {
     this.config = config;
-    console.log("MqttSubscriber initialized");
+    console.log("  MqttSubscriber initialized");
   }
 
   /**

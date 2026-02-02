@@ -21,7 +21,7 @@ class WebhookService {
    */
   async initialize(config) {
     this.config = config;
-    console.log("WebhookService initialized");
+    console.log("  WebhookService initialized");
   }
 
   /**

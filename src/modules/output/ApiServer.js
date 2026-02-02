@@ -27,7 +27,7 @@ class ApiServer {
     this.config = config;
     this.setupMiddleware();
     this.setupRoutes();
-    console.log("ApiServer initialized");
+    console.log("  ApiServer initialized");
   }
 
   /**
@@ -130,6 +130,43 @@ class ApiServer {
       } catch (error) {
         console.error("Error fetching modules:", error.message);
         res.status(500).json({ error: "Failed to fetch modules" });
+      }
+    });
+
+    // UOS endpoint - Get telemetry for a specific module
+    this.app.get("/api/uos/:deviceId/:moduleIndex", (req, res) => {
+      try {
+        const { deviceId, moduleIndex } = req.params;
+        const telemetry = StateCache.getTelemetry(
+          deviceId,
+          parseInt(moduleIndex),
+        );
+
+        if (!telemetry) {
+          return res.status(404).json({ error: "Module telemetry not found" });
+        }
+
+        res.json(telemetry);
+      } catch (error) {
+        console.error("Error fetching UOS telemetry:", error.message);
+        res.status(500).json({ error: "Failed to fetch UOS telemetry" });
+      }
+    });
+
+    // META endpoint - Get device metadata
+    this.app.get("/api/meta/:deviceId", (req, res) => {
+      try {
+        const { deviceId } = req.params;
+        const metadata = StateCache.getMetadata(deviceId);
+
+        if (!metadata) {
+          return res.status(404).json({ error: "Device metadata not found" });
+        }
+
+        res.json(metadata);
+      } catch (error) {
+        console.error("Error fetching META metadata:", error.message);
+        res.status(500).json({ error: "Failed to fetch META metadata" });
       }
     });
 

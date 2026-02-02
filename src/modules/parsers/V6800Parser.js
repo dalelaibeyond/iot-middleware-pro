@@ -40,7 +40,7 @@ class V6800Parser {
    */
   async initialize(config) {
     this.config = config;
-    console.log("V6800Parser initialized");
+    console.log("  V6800Parser initialized");
   }
 
   /**

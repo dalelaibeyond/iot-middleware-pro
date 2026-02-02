@@ -36,7 +36,7 @@ class ParserManager {
       this.handleMessage(mqttMessage);
     });
 
-    console.log("ParserManager initialized");
+    console.log("  ParserManager initialized");
   }
 
   /**
