@@ -3,6 +3,7 @@
  *
  * Handles outbound commands to devices via MQTT.
  * Listens for command.request events and publishes to appropriate topics.
+ * Translates internal system intents into device-specific raw protocols.
  */
 
 const mqtt = require("mqtt");
@@ -13,6 +14,7 @@ class CommandService {
     this.config = null;
     this.client = null;
     this.isConnected = false;
+    this.mqttConfig = null;
   }
 
   /**
@@ -102,32 +104,67 @@ class CommandService {
    */
   handleCommandRequest(command) {
     try {
-      const { deviceId, messageType, payload } = command;
+      // Validate required fields
+      if (!command.deviceId) {
+        throw new Error("Missing required field: deviceId");
+      }
+      if (!command.deviceType) {
+        throw new Error("Missing required field: deviceType");
+      }
+      if (!command.messageType) {
+        throw new Error("Missing required field: messageType");
+      }
 
-      console.log(`Command request: ${messageType} for device ${deviceId}`);
+      const { deviceId, deviceType, messageType, payload = {} } = command;
 
-      // Determine format: V6800 (JSON) or V5008 (Hex)
-      // For now, we'll assume V6800 format for JSON commands
-      // V5008 would need binary encoding
+      console.log(
+        `Command request: ${messageType} for device ${deviceId} (${deviceType})`,
+      );
 
-      const mqttPayload = this.buildPayload(messageType, payload);
+      // Validate required parameters based on command type
+      this.validateCommandParameters(messageType, payload);
 
-      // Publish to download topic
-      const downloadTopic = `${this.mqttConfig.downloadTopic}/${deviceId}`;
+      let mqttPayload;
+      let topic;
 
+      // Route based on device type
+      if (deviceType === "V5008") {
+        mqttPayload = this.buildV5008Command(messageType, payload);
+        topic = `V5008Download/${deviceId}`;
+      } else if (deviceType === "V6800") {
+        mqttPayload = this.buildV6800Command(messageType, payload, deviceId);
+        topic = `V6800Download/${deviceId}`;
+      } else {
+        console.error(`Unknown device type: ${deviceType}`);
+        eventBus.emitError(
+          new Error(`Unknown device type: ${deviceType}`),
+          "CommandService",
+        );
+        return;
+      }
+
+      // Log the outbound command for audit purposes
+      console.log(`Publishing command to topic: ${topic}`);
+      if (deviceType === "V5008") {
+        console.log(`Binary payload:`, mqttPayload);
+      } else {
+        console.log(`JSON payload:`, mqttPayload);
+      }
+
+      // Publish to appropriate topic
       this.client.publish(
-        downloadTopic,
-        JSON.stringify(mqttPayload),
+        topic,
+        deviceType === "V5008" ? mqttPayload : JSON.stringify(mqttPayload),
         { qos: 1 },
         (err) => {
           if (err) {
             console.error(
-              `Failed to publish command to ${downloadTopic}:`,
+              `Failed to publish command to ${topic}:`,
               err.message,
             );
             eventBus.emitError(err, "CommandService");
           } else {
-            console.log(`Command published to ${downloadTopic}`);
+            console.log(`Command published to ${topic}`);
           }
         },
       );
@@ -138,37 +175,194 @@ class CommandService {
   }
 
   /**
-   * Build command payload based on message type
+   * Validate command parameters based on message type
    * @param {string} messageType - Message type
    * @param {Object} payload - Command payload
-   * @returns {Object} MQTT payload
    */
-  buildPayload(messageType, payload) {
-    const msgTypeMap = {
-      QRY_RFID_SNAPSHOT: "u_state_req",
-      CLN_ALARM: "u_clr_alarm",
-      SET_COLOR: "u_set_color",
-      REBOOT: "u_reboot",
-    };
+  validateCommandParameters(messageType, payload) {
+    switch (messageType) {
+      case "QRY_RFID_SNAPSHOT":
+      case "QRY_TEMP_HUM":
+      case "QRY_DOOR_STATE":
+      case "QRY_NOISE_LEVEL":
+      case "QRY_COLOR":
+        if (payload.moduleIndex === undefined) {
+          throw new Error(
+            `Missing required parameter: moduleIndex for ${messageType}`,
+          );
+        }
+        break;
+      case "CLN_ALARM":
+        if (
+          payload.moduleIndex === undefined ||
+          payload.sensorIndex === undefined
+        ) {
+          throw new Error(
+            `Missing required parameters: moduleIndex and sensorIndex for ${messageType}`,
+          );
+        }
+        break;
+      case "SET_COLOR":
+        if (
+          payload.moduleIndex === undefined ||
+          payload.sensorIndex === undefined ||
+          payload.colorCode === undefined
+        ) {
+          throw new Error(
+            `Missing required parameters: moduleIndex, sensorIndex, and colorCode for ${messageType}`,
+          );
+        }
+        break;
+    }
+  }
 
-    const msgType = msgTypeMap[messageType] || messageType;
+  /**
+   * Build V5008 binary command
+   * @param {string} messageType - Message type
+   * @param {Object} payload - Command payload
+   * @returns {Buffer} Binary payload
+   */
+  buildV5008Command(messageType, payload) {
+    const { moduleIndex, sensorIndex, colorCode } = payload;
 
-    return {
-      msg_type: msgType,
-      ...payload,
-    };
+    switch (messageType) {
+      case "QRY_RFID_SNAPSHOT":
+        return Buffer.from([0xe9, 0x01, moduleIndex]);
+      case "QRY_TEMP_HUM":
+        return Buffer.from([0xe9, 0x02, moduleIndex]);
+      case "QRY_DOOR_STATE":
+        return Buffer.from([0xe9, 0x03, moduleIndex]);
+      case "QRY_NOISE_LEVEL":
+        return Buffer.from([0xe9, 0x04, moduleIndex]);
+      case "QRY_DEVICE_INFO":
+        return Buffer.from([0xef, 0x01, 0x00]);
+      case "QRY_MODULE_INFO":
+        return Buffer.from([0xef, 0x02, 0x00]);
+      case "QRY_COLOR":
+        return Buffer.from([0xe4, moduleIndex]);
+      case "CLN_ALARM":
+        return Buffer.from([0xe2, moduleIndex, sensorIndex]);
+      case "SET_COLOR":
+        // Handle single LED
+        if (Array.isArray(payload.leds)) {
+          // Multiple LEDs case
+          const bufferArray = [0xe1];
+          payload.leds.forEach((led) => {
+            bufferArray.push(moduleIndex, led.sensorIndex, led.colorCode);
+          });
+          return Buffer.from(bufferArray);
+        } else {
+          // Single LED case
+          return Buffer.from([0xe1, moduleIndex, sensorIndex, colorCode]);
+        }
+      default:
+        throw new Error(`Unsupported message type for V5008: ${messageType}`);
+    }
+  }
+
+  /**
+   * Build V6800 JSON command
+   * @param {string} messageType - Message type
+   * @param {Object} payload - Command payload
+   * @param {string} deviceId - Device ID
+   * @returns {Object} JSON payload
+   */
+  buildV6800Command(messageType, payload, deviceId) {
+    const { moduleIndex, sensorIndex, colorCode } = payload;
+
+    switch (messageType) {
+      case "QRY_RFID_SNAPSHOT":
+        return {
+          msg_type: "u_state_req",
+          gateway_sn: deviceId,
+          data: [
+            {
+              extend_module_sn: payload.extendModuleSn || null,
+              host_gateway_port_index: moduleIndex,
+              u_index_list: null,
+            },
+          ],
+        };
+      case "QRY_TEMP_HUM":
+        return {
+          msg_type: "temper_humidity_req",
+          gateway_sn: deviceId,
+          extend_module_sn: null,
+          data: [moduleIndex],
+        };
+      case "QRY_DOOR_STATE":
+        return {
+          msg_type: "door_state_req",
+          gateway_sn: deviceId,
+          extend_module_sn: payload.extendModuleSn || null,
+          host_gateway_port_index: moduleIndex,
+        };
+      case "QRY_DEV_MOD_INFO":
+        return {
+          msg_type: "get_devies_init_req",
+          code: 200,
+        };
+      case "QRY_COLOR":
+        return {
+          msg_type: "get_u_color",
+          code: 1346589,
+          data: [moduleIndex],
+        };
+      case "CLN_ALARM":
+        return {
+          msg_type: "clear_u_warning",
+          gateway_id: deviceId,
+          code: 123456,
+          data: [
+            {
+              index: moduleIndex,
+              warning_data: Array.isArray(sensorIndex)
+                ? sensorIndex
+                : [sensorIndex],
+            },
+          ],
+        };
+      case "SET_COLOR":
+        return {
+          msg_type: "set_module_property_req",
+          gateway_sn: deviceId,
+          set_property_type: 8001,
+          data: [
+            {
+              host_gateway_port_index: moduleIndex,
+              extend_module_sn: payload.extendModuleSn || null,
+              module_type: 2,
+              u_color_data: Array.isArray(payload.leds)
+                ? payload.leds.map((led) => ({
+                    u_index: led.sensorIndex,
+                    color_code: led.colorCode,
+                  }))
+                : [
+                    {
+                      u_index: sensorIndex,
+                      color_code: colorCode,
+                    },
+                  ],
+            },
+          ],
+        };
+      default:
+        throw new Error(`Unsupported message type for V6800: ${messageType}`);
+    }
   }
 
   /**
    * Send a command directly (for API usage)
    * @param {string} deviceId - Device ID
+   * @param {string} deviceType - Device type ("V5008" or "V6800")
    * @param {string} messageType - Message type
    * @param {Object} payload - Command payload
    * @returns {Promise<void>}
    */
-  async sendCommand(deviceId, messageType, payload = {}) {
+  async sendCommand(deviceId, deviceType, messageType, payload = {}) {
     const command = {
       deviceId,
+      deviceType,
       messageType,
       payload,
       timestamp: new Date(),

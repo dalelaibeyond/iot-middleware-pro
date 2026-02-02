@@ -89,19 +89,69 @@ src/
 
 ## Data Flow
 
+### Ingress Flow (Device → Dashboard)
+
 1. **Ingest**: `MqttSubscriber` → `mqtt.message` event
 2. **Parse**: `ParserManager` selects Parser → Returns **SIF** (Standard Intermediate Format)
 3. **Normalize**: `UnifyNormalizer` converts SIF → **SUO** (Standard Unified Object)
 4. **Distribute**: Emits `data.normalized` event
 5. **Output**: `StorageService`, `WebSocketServer`, `ApiServer` consume `data.normalized`
 
+### Egress Flow (Dashboard → Device)
+
+1. **API Request**: Dashboard sends `POST /api/commands`
+2. **Validation**: `ApiServer` validates required fields (deviceId, deviceType, messageType)
+3. **Event Emission**: Emits `command.request` event with command details
+4. **Command Processing**: `CommandService` receives event, builds device-specific protocol
+5. **MQTT Publish**: Publishes to `V5008Download/{deviceId}` or `V6800Download/{deviceId}`
+6. **Device Response**: Device executes command and sends response via MQTT
+7. **State Update**: Response is processed through normal ingress flow
+
 ## API Endpoints
+
+### System & Health
 
 - `GET /api/health` - System health check
 - `GET /api/config` - System configuration (passwords redacted)
+
+### Device Information
+
 - `GET /api/devices` - List all devices
-- `GET /api/devices/:deviceId/modules/:moduleIndex/state` - Module state
-- `POST /api/commands` - Send control commands
+- `GET /api/devices/:deviceId/modules` - Get all modules for a device
+- `GET /api/devices/:deviceId/modules/:moduleIndex/state` - Module state detail
+
+### Telemetry & Metadata
+
+- `GET /api/uos/:deviceId/:moduleIndex` - Get telemetry for a specific module (Unified Object Structure)
+- `GET /api/meta/:deviceId` - Get device metadata
+
+### Device Control
+
+- `POST /api/commands` - Send control commands to devices
+
+#### POST /api/commands Request Format:
+
+```json
+{
+  "deviceId": "2437871205",
+  "deviceType": "V5008", // "V5008" or "V6800"
+  "messageType": "SET_COLOR", // The Unified Enum
+  "payload": {
+    "moduleIndex": 1,
+    "sensorIndex": 10,
+    "colorCode": 1
+  }
+}
+```
+
+#### POST /api/commands Response Format:
+
+```json
+{
+  "status": "sent",
+  "commandId": "cmd_1770039677260_zlea2vwmo"
+}
+```
 
 ## V6800Parser Usage
 
@@ -179,6 +229,52 @@ node tests/verify_v6800.js
 ```
 
 This will run 19 test cases covering all message types and edge cases.
+
+## CommandService Usage
+
+The CommandService handles outbound commands to devices via MQTT, translating internal system intents into device-specific protocols.
+
+### Direct Usage
+
+```javascript
+const CommandService = require("./src/modules/command/CommandService");
+
+// Send a command directly
+await CommandService.sendCommand(
+  "2437871205", // deviceId
+  "V5008", // deviceType
+  "SET_COLOR", // messageType
+  {
+    moduleIndex: 1,
+    sensorIndex: 10,
+    colorCode: 1,
+  },
+);
+```
+
+### Supported Message Types
+
+#### V5008 (Binary Protocol)
+
+- `QRY_RFID_SNAPSHOT` - Query RFID snapshot
+- `QRY_TEMP_HUM` - Query temperature/humidity
+- `QRY_DOOR_STATE` - Query door state
+- `QRY_NOISE_LEVEL` - Query noise level
+- `QRY_DEVICE_INFO` - Query device information
+- `QRY_MODULE_INFO` - Query module information
+- `QRY_COLOR` - Query color state
+- `CLN_ALARM` - Clear alarm
+- `SET_COLOR` - Set LED color
+
+#### V6800 (JSON Protocol)
+
+- `QRY_RFID_SNAPSHOT` - Query RFID snapshot
+- `QRY_TEMP_HUM` - Query temperature/humidity
+- `QRY_DOOR_STATE` - Query door state
+- `QRY_DEV_MOD_INFO` - Query device/module information
+- `QRY_COLOR` - Query color state
+- `CLN_ALARM` - Clear alarm
+- `SET_COLOR` - Set LED color
 
 ## License
 

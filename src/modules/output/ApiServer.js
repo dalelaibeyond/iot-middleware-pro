@@ -173,23 +173,39 @@ class ApiServer {
     // Control commands endpoint
     this.app.post("/api/commands", async (req, res) => {
       try {
-        const { deviceId, messageType, payload } = req.body;
+        const { deviceId, deviceType, messageType, payload } = req.body;
 
-        if (!deviceId || !messageType) {
+        // Validate required fields
+        if (!deviceId || !deviceType || !messageType) {
           return res
             .status(400)
-            .json({ error: "Missing required fields: deviceId, messageType" });
+            .json({
+              error:
+                "Missing required fields: deviceId, deviceType, messageType",
+            });
         }
 
-        // Emit command request
-        eventBus.emitCommandRequest({
+        // Generate a unique command ID for tracking
+        const commandId = `cmd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+        // Construct the internal command event
+        const commandEvent = {
           deviceId,
+          deviceType,
           messageType,
           payload: payload || {},
           timestamp: new Date(),
-        });
+          commandId,
+        };
 
-        res.json({ success: true, message: "Command queued" });
+        // Emit to the internal nervous system
+        eventBus.emit("command.request", commandEvent);
+
+        // Return 202 Accepted with command ID as per specification
+        res.status(202).json({
+          status: "sent",
+          commandId,
+        });
       } catch (error) {
         console.error("Error sending command:", error.message);
         res.status(500).json({ error: "Failed to send command" });
