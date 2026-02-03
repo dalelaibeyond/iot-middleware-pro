@@ -38,7 +38,7 @@ class MqttSubscriber {
 
     const mqttConfig = require("config").get("mqtt");
 
-    console.log(`Connecting to MQTT broker: ${mqttConfig.brokerUrl}`);
+    console.log(`  Connecting to MQTT broker: ${mqttConfig.brokerUrl}`);
 
     // Use unique client ID to avoid conflicts with CommandService
     const options = {
@@ -50,7 +50,7 @@ class MqttSubscriber {
 
     this.client.on("connect", () => {
       this.isConnected = true;
-      console.log("MQTT connected");
+      console.log("  MQTT connected");
 
       // Subscribe to topics
       const topics = Object.values(mqttConfig.topics);
@@ -76,7 +76,7 @@ class MqttSubscriber {
 
     this.client.on("close", () => {
       this.isConnected = false;
-      console.log("MQTT connection closed");
+      console.log("  MQTT connection closed");
     });
 
     this.client.on("reconnect", () => {
@@ -100,7 +100,7 @@ class MqttSubscriber {
       });
     });
 
-    console.log("MqttSubscriber started");
+    console.log("  MqttSubscriber started");
   }
 
   /**
@@ -189,7 +189,7 @@ class MqttSubscriber {
    */
   async stop() {
     if (this.client) {
-      console.log("Stopping MqttSubscriber...");
+      console.log("  Stopping MqttSubscriber...");
 
       await new Promise((resolve) => {
         this.client.end(false, {}, () => {
@@ -199,7 +199,7 @@ class MqttSubscriber {
 
       this.client = null;
       this.isConnected = false;
-      console.log("MqttSubscriber stopped");
+      console.log("  MqttSubscriber stopped");
     }
   }
 

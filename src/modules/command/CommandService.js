@@ -43,7 +43,7 @@ class CommandService {
     this.mqttConfig = mqttConfig;
 
     console.log(
-      `Connecting to MQTT broker for commands: ${mqttConfig.brokerUrl}`,
+      `  Connecting to MQTT broker for commands: ${mqttConfig.brokerUrl}`,
     );
 
     // Use unique client ID to avoid conflicts with MqttSubscriber
@@ -56,7 +56,7 @@ class CommandService {
 
     this.client.on("connect", () => {
       this.isConnected = true;
-      console.log("CommandService MQTT connected");
+      console.log("  CommandService MQTT connected");
     });
 
     this.client.on("error", (error) => {
@@ -66,7 +66,7 @@ class CommandService {
 
     this.client.on("close", () => {
       this.isConnected = false;
-      console.log("CommandService MQTT connection closed");
+      console.log("  CommandService MQTT connection closed");
     });
 
     this.client.on("reconnect", () => {
@@ -95,7 +95,7 @@ class CommandService {
       this.handleCommandRequest(command);
     });
 
-    console.log("CommandService started");
+    console.log("  CommandService started");
   }
 
   /**
@@ -129,6 +129,57 @@ class CommandService {
 
       // Route based on device type
       if (deviceType === "V5008") {
+        // Special handling for QRY_DEV_MOD_INFO - trigger QRY_DEVICE_INFO and QRY_MODULE_INFO sequentially
+        if (messageType === "QRY_DEV_MOD_INFO") {
+          console.log(
+            `QRY_DEV_MOD_INFO for V5008 - triggering QRY_DEVICE_INFO and QRY_MODULE_INFO sequentially`,
+          );
+          
+          // Send QRY_DEVICE_INFO first
+          const deviceInfoPayload = this.buildV5008Command("QRY_DEVICE_INFO", payload);
+          const deviceInfoTopic = `V5008Download/${deviceId}`;
+          
+          this.client.publish(
+            deviceInfoTopic,
+            deviceInfoPayload,
+            { qos: 1 },
+            (err) => {
+              if (err) {
+                console.error(
+                  `Failed to publish QRY_DEVICE_INFO to ${deviceInfoTopic}:`,
+                  err.message,
+                );
+                eventBus.emitError(err, "CommandService");
+              } else {
+                console.log(`QRY_DEVICE_INFO published to ${deviceInfoTopic}`);
+              }
+            },
+          );
+
+          // Then send QRY_MODULE_INFO
+          const moduleInfoPayload = this.buildV5008Command("QRY_MODULE_INFO", payload);
+          const moduleInfoTopic = `V5008Download/${deviceId}`;
+          
+          this.client.publish(
+            moduleInfoTopic,
+            moduleInfoPayload,
+            { qos: 1 },
+            (err) => {
+              if (err) {
+                console.error(
+                  `Failed to publish QRY_MODULE_INFO to ${moduleInfoTopic}:`,
+                  err.message,
+                );
+                eventBus.emitError(err, "CommandService");
+              } else {
+                console.log(`QRY_MODULE_INFO published to ${moduleInfoTopic}`);
+              }
+            },
+          );
+
+          return; // Exit early as both commands have been sent
+        }
+
         mqttPayload = this.buildV5008Command(messageType, payload);
         topic = `V5008Download/${deviceId}`;
       } else if (deviceType === "V6800") {
@@ -146,7 +197,7 @@ class CommandService {
       // Log the outbound command for audit purposes
       console.log(`Publishing command to topic: ${topic}`);
       if (deviceType === "V5008") {
-        console.log(`Binary payload:`, mqttPayload);
+        console.log(`Hex payload:`, mqttPayload.toString("hex").toUpperCase());
       } else {
         console.log(`JSON payload:`, mqttPayload);
       }
@@ -376,7 +427,7 @@ class CommandService {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping CommandService...");
+    console.log("  Stopping CommandService...");
 
     if (this.client) {
       await new Promise((resolve) => {
@@ -392,7 +443,7 @@ class CommandService {
     // Unsubscribe from events
     eventBus.removeAllListeners("command.request");
 
-    console.log("CommandService stopped");
+    console.log("  CommandService stopped");
   }
 
   /**

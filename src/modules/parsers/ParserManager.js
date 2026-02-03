@@ -44,7 +44,7 @@ class ParserManager {
    * @returns {Promise<void>}
    */
   async start() {
-    console.log("ParserManager started");
+    console.log("  ParserManager started");
   }
 
   /**
@@ -112,12 +112,12 @@ class ParserManager {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping ParserManager...");
+    console.log("  Stopping ParserManager...");
 
     // Unsubscribe from events
     eventBus.removeAllListeners("mqtt.message");
 
-    console.log("ParserManager stopped");
+    console.log("  ParserManager stopped");
   }
 
   /**

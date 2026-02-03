@@ -34,7 +34,7 @@ class WebhookService {
       this.handleData(suo);
     });
 
-    console.log("WebhookService started");
+    console.log("  WebhookService started");
   }
 
   /**
@@ -127,12 +127,12 @@ class WebhookService {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping WebhookService...");
+    console.log("  Stopping WebhookService...");
 
     // Unsubscribe from events
     eventBus.removeAllListeners("data.normalized");
 
-    console.log("WebhookService stopped");
+    console.log("  WebhookService stopped");
   }
 }
 

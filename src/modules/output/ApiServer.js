@@ -234,7 +234,7 @@ class ApiServer {
 
     return new Promise((resolve, reject) => {
       this.server = this.app.listen(port, host, () => {
-        console.log(`ApiServer listening on http://${host}:${port}`);
+        console.log(`  ApiServer listening on http://${host}:${port}`);
         resolve();
       });
 
@@ -254,7 +254,7 @@ class ApiServer {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping ApiServer...");
+    console.log("  Stopping ApiServer...");
 
     if (this.server) {
       await new Promise((resolve) => {
@@ -266,7 +266,7 @@ class ApiServer {
       this.server = null;
     }
 
-    console.log("ApiServer stopped");
+    console.log("  ApiServer stopped");
   }
 }
 

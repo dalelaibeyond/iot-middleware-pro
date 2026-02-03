@@ -47,7 +47,7 @@ class WebSocketServer {
       this.broadcast(suo);
     });
 
-    console.log(`WebSocketServer listening on port ${port}`);
+    console.log(`  WebSocketServer listening on port ${port}`);
   }
 
   /**
@@ -177,7 +177,7 @@ class WebSocketServer {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping WebSocketServer...");
+    console.log("  Stopping WebSocketServer...");
 
     // Close all client connections
     this.clients.forEach((client) => {
@@ -196,7 +196,7 @@ class WebSocketServer {
     // Unsubscribe from events
     eventBus.removeAllListeners("data.normalized");
 
-    console.log("WebSocketServer stopped");
+    console.log("  WebSocketServer stopped");
   }
 }
 

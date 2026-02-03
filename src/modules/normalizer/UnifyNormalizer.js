@@ -35,7 +35,7 @@ class UnifyNormalizer {
       this.normalize(sif);
     });
 
-    console.log("UnifyNormalizer started");
+    console.log("  UnifyNormalizer started");
   }
 
   /**
@@ -1677,12 +1677,12 @@ class UnifyNormalizer {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping UnifyNormalizer...");
+    console.log("  Stopping UnifyNormalizer...");
 
     // Unsubscribe from events
     eventBus.removeAllListeners("data.parsed");
 
-    console.log("UnifyNormalizer stopped");
+    console.log("  UnifyNormalizer stopped");
   }
 }
 

@@ -50,7 +50,7 @@ class StorageService {
     }, flushInterval);
 
     this.isRunning = true;
-    console.log("StorageService started");
+    console.log("  StorageService started");
   }
 
   /**
@@ -389,7 +389,7 @@ class StorageService {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping StorageService...");
+    console.log("  Stopping StorageService...");
 
     // Flush remaining data
     await this.flush();
@@ -404,7 +404,7 @@ class StorageService {
     eventBus.removeAllListeners("data.normalized");
 
     this.isRunning = false;
-    console.log("StorageService stopped");
+    console.log("  StorageService stopped");
   }
 }
 

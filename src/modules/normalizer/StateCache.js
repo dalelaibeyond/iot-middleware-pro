@@ -38,7 +38,7 @@ class StateCache {
    * @returns {Promise<void>}
    */
   async start() {
-    console.log("StateCache started");
+    console.log("  StateCache started");
   }
 
   /**
@@ -322,14 +322,14 @@ class StateCache {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping StateCache...");
+    console.log("  Stopping StateCache...");
 
     // Clear all caches
     this.metadataCache.clear();
     this.telemetryCache.clear();
     this.heartbeatCache.clear();
 
-    console.log("StateCache stopped");
+    console.log("  StateCache stopped");
   }
 }
 

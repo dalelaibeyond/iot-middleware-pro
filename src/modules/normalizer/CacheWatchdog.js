@@ -22,7 +22,7 @@ class CacheWatchdog {
    */
   async initialize(config) {
     this.config = config;
-    console.log("CacheWatchdog initialized");
+    console.log("  CacheWatchdog initialized");
   }
 
   /**
@@ -38,7 +38,7 @@ class CacheWatchdog {
     const normalizerConfig = require("config").get("modules.normalizer");
     const checkInterval = normalizerConfig.checkInterval || 30000; // Default: 30s
 
-    console.log(`Starting CacheWatchdog (interval: ${checkInterval}ms)`);
+    console.log(`  Starting CacheWatchdog (interval: ${checkInterval}ms)`);
 
     // Start periodic check
     this.timer = setInterval(() => {
@@ -46,7 +46,7 @@ class CacheWatchdog {
     }, checkInterval);
 
     this.isRunning = true;
-    console.log("CacheWatchdog started");
+    console.log("  CacheWatchdog started");
   }
 
   /**
@@ -55,11 +55,11 @@ class CacheWatchdog {
    */
   async stop() {
     if (this.timer) {
-      console.log("Stopping CacheWatchdog...");
+      console.log("  Stopping CacheWatchdog...");
       clearInterval(this.timer);
       this.timer = null;
       this.isRunning = false;
-      console.log("CacheWatchdog stopped");
+      console.log("  CacheWatchdog stopped");
     }
   }
 

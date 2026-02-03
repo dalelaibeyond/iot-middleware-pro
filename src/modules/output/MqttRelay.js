@@ -36,13 +36,13 @@ class MqttRelay {
 
     const mqttConfig = require("config").get("mqtt");
 
-    console.log(`Connecting to MQTT broker for relay: ${mqttConfig.brokerUrl}`);
+    console.log(`  Connecting to MQTT broker for relay: ${mqttConfig.brokerUrl}`);
 
     this.client = mqtt.connect(mqttConfig.brokerUrl, mqttConfig.options);
 
     this.client.on("connect", () => {
       this.isConnected = true;
-      console.log("MqttRelay MQTT connected");
+      console.log("  MqttRelay MQTT connected");
     });
 
     this.client.on("error", (error) => {
@@ -52,7 +52,7 @@ class MqttRelay {
 
     this.client.on("close", () => {
       this.isConnected = false;
-      console.log("MqttRelay MQTT connection closed");
+      console.log("  MqttRelay MQTT connection closed");
     });
 
     this.client.on("reconnect", () => {
@@ -81,7 +81,7 @@ class MqttRelay {
       this.handleData(suo);
     });
 
-    console.log("MqttRelay started");
+    console.log("  MqttRelay started");
   }
 
   /**
@@ -118,7 +118,7 @@ class MqttRelay {
    * @returns {Promise<void>}
    */
   async stop() {
-    console.log("Stopping MqttRelay...");
+    console.log("  Stopping MqttRelay...");
 
     if (this.client) {
       await new Promise((resolve) => {
@@ -134,7 +134,7 @@ class MqttRelay {
     // Unsubscribe from events
     eventBus.removeAllListeners("data.normalized");
 
-    console.log("MqttRelay stopped");
+    console.log("  MqttRelay stopped");
   }
 
   /**
