@@ -94,6 +94,14 @@ class StateCache {
       cached.activeModules.forEach((m) => cachedModulesMap.set(m.moduleIndex, m));
 
       incomingMetadata.activeModules.forEach((incomingModule) => {
+        // Filter out invalid modules: moduleId must be non-null string
+        if (!incomingModule.moduleId || typeof incomingModule.moduleId !== 'string') {
+          console.warn(
+            `[StateCache] Skipping invalid module with moduleId=${incomingModule.moduleId} at index ${incomingModule.moduleIndex}`
+          );
+          return;
+        }
+
         const cachedModule = cachedModulesMap.get(incomingModule.moduleIndex);
 
         if (!cachedModule) {
