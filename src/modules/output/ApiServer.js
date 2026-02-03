@@ -39,11 +39,23 @@ class ApiServer {
 
     // CORS middleware (adjust as needed for your frontend)
     this.app.use((req, res, next) => {
+      const origin = req.headers.origin;
+      console.log(`CORS: Request from ${origin} for ${req.method} ${req.url}`);
+
       res.header("Access-Control-Allow-Origin", "*");
-      res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.header("Access-Control-Allow-Headers", "Content-Type");
+      res.header(
+        "Access-Control-Allow-Methods",
+        "GET, POST, PUT, DELETE, OPTIONS",
+      );
+      res.header(
+        "Access-Control-Allow-Headers",
+        "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      );
+      res.header("Access-Control-Allow-Credentials", "true");
+
       if (req.method === "OPTIONS") {
-        return res.sendStatus(200);
+        console.log("CORS: Preflight request");
+        return res.status(200).send();
       }
       next();
     });
@@ -177,12 +189,9 @@ class ApiServer {
 
         // Validate required fields
         if (!deviceId || !deviceType || !messageType) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Missing required fields: deviceId, deviceType, messageType",
-            });
+          return res.status(400).json({
+            error: "Missing required fields: deviceId, deviceType, messageType",
+          });
         }
 
         // Generate a unique command ID for tracking

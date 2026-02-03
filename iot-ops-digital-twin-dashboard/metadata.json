@@ -1,0 +1,5 @@
+{
+  "name": "IoT Ops Digital Twin Dashboard",
+  "description": "A real-time data center rack monitoring system with physical visualization, environmental sensing, and security status tracking.",
+  "requestFramePermissions": []
+}

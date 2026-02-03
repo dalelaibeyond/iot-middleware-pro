@@ -1,0 +1,88 @@
+
+/* Base Theme & Resets */
+:root {
+  --color-slate-950: #020617;
+  --color-slate-900: #0f172a;
+  --color-slate-800: #1e293b;
+  --color-sky-500: #0ea5e9;
+}
+
+body {
+  background-color: var(--color-slate-950);
+  color: #f8fafc;
+  margin: 0;
+  overflow: hidden;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+
+/* Custom Hardware Animations */
+@keyframes pulse-red {
+  0%, 100% { background-color: rgba(225, 29, 72, 0.2); }
+  50% { background-color: rgba(225, 29, 72, 0.6); }
+}
+
+@keyframes blink-red {
+  0%, 100% { background-color: rgba(244, 63, 94, 0.1); }
+  50% { background-color: rgba(244, 63, 94, 0.5); }
+}
+
+.animate-pulse-red {
+  animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-blink-red {
+  animation: blink-red 1s step-end infinite;
+}
+
+/* Modern Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-slate-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Reusable Component Layouts (Semantic Classes) */
+.glass-panel {
+  background-color: rgba(15, 23, 42, 0.5);
+  border-radius: 1rem;
+  border: 1px solid var(--color-slate-800);
+  padding: 1.5rem;
+}
+
+.hardware-card {
+  background-color: rgba(30, 41, 59, 0.5);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  transition: all 0.5s ease;
+}
+
+.rack-rail-container {
+  background-color: var(--color-slate-900);
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-slate-800);
+  box-shadow: 0 0 0 8px rgba(2, 6, 23, 0.5);
+}
+
+.sidebar-item-active {
+  background-color: var(--color-slate-800);
+  color: white;
+}
+
+.sidebar-subitem-active {
+  color: var(--color-sky-500);
+  font-weight: 500;
+  transform: translateX(4px);
+}
