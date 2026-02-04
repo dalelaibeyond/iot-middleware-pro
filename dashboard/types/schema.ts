@@ -19,20 +19,24 @@ export interface NoiseLevel {
 export interface RackState {
   deviceId: string;
   moduleIndex: number;
-  
-  // Status
-  isOnline: boolean;
-  lastSeen_hb: string;
 
-  // Sensor Data
-  rfid_snapshot: RFIDTag[];
-  temp_hum: TempHum[];
-  noise_level: NoiseLevel[];
-  
+  // Status - Support both camelCase and snake_case
+  isOnline: boolean;
+  lastSeen_hb?: string;
+  lastSeenHb?: string;
+
+  // Sensor Data - Support both camelCase and snake_case
+  rfid_snapshot?: RFIDTag[];
+  rfidSnapshot?: RFIDTag[];
+  temp_hum?: TempHum[];
+  tempHum?: TempHum[];
+  noise_level?: NoiseLevel[];
+  noiseLevel?: NoiseLevel[];
+
   // Doors (0=Closed, 1=Open)
-  doorState: number | null;
-  door1State: number | null;
-  door2State: number | null;
+  doorState?: number | null;
+  door1State?: number | null;
+  door2State?: number | null;
 }
 
 export interface ModuleMetadata {

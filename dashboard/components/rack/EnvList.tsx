@@ -5,11 +5,17 @@ import { Thermometer, Wind, Volume2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 interface EnvListProps {
-  tempHum: TempHum[];
-  noise: NoiseLevel[];
+  tempHum?: TempHum[];
+  temp_hum?: TempHum[];
+  noise?: NoiseLevel[];
+  noise_level?: NoiseLevel[];
 }
 
-export const EnvList: React.FC<EnvListProps> = ({ tempHum, noise }) => {
+export const EnvList: React.FC<EnvListProps> = ({ tempHum, temp_hum, noise, noise_level }) => {
+  // Support both camelCase and snake_case field names
+  const tempHumData = tempHum || temp_hum || [];
+  const noiseData = noise || noise_level || [];
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4">
@@ -19,7 +25,7 @@ export const EnvList: React.FC<EnvListProps> = ({ tempHum, noise }) => {
         </div>
 
         <div className="space-y-3">
-          {tempHum.map((data, i) => (
+          {tempHumData.map((data, i) => (
             <div 
               key={i} 
               className={cn(
@@ -69,7 +75,7 @@ export const EnvList: React.FC<EnvListProps> = ({ tempHum, noise }) => {
           <h3 className="text-sm font-bold text-slate-300 uppercase tracking-tight">Acoustic Logic</h3>
         </div>
 
-        {noise.map((n, i) => (
+        {noiseData.map((n, i) => (
           <div key={i} className="p-4 rounded-xl hardware-card">
              <div className="text-[10px] font-bold uppercase text-slate-500 mb-1">Noise Level</div>
              <div className="flex items-end gap-2">

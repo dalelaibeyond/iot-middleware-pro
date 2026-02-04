@@ -125,7 +125,12 @@ class ApiServer {
             return res.status(404).json({ error: "Module state not found" });
           }
 
-          res.json(state);
+          // Include deviceId and moduleIndex in response for dashboard validation
+          res.json({
+            ...state,
+            deviceId,
+            moduleIndex: parseInt(moduleIndex),
+          });
         } catch (error) {
           console.error("Error fetching module state:", error.message);
           res.status(500).json({ error: "Failed to fetch module state" });
@@ -158,7 +163,12 @@ class ApiServer {
           return res.status(404).json({ error: "Module telemetry not found" });
         }
 
-        res.json(telemetry);
+        // Include deviceId and moduleIndex in response for dashboard validation
+        res.json({
+          ...telemetry,
+          deviceId,
+          moduleIndex: parseInt(moduleIndex),
+        });
       } catch (error) {
         console.error("Error fetching UOS telemetry:", error.message);
         res.status(500).json({ error: "Failed to fetch UOS telemetry" });

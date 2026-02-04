@@ -1089,9 +1089,9 @@ class UnifyNormalizer {
 
         // Move door state fields into payload array
         const doorState = {
-          doorState: moduleData.doorState || null,
-          door1State: moduleData.door1State || null,
-          door2State: moduleData.door2State || null,
+          doorState: moduleData.doorState ?? null,
+          door1State: moduleData.door1State ?? null,
+          door2State: moduleData.door2State ?? null,
         };
 
         const suo = this.createSuo({
@@ -1128,9 +1128,9 @@ class UnifyNormalizer {
 
       // Move door state fields into payload array
       const doorStatePayload = {
-        doorState: doorState || null,
-        door1State: door1State || null,
-        door2State: door2State || null,
+        doorState: doorState ?? null,
+        door1State: door1State ?? null,
+        door2State: door2State ?? null,
       };
 
       const suo = this.createSuo({
@@ -1164,9 +1164,9 @@ class UnifyNormalizer {
 
       // Move door state fields into payload array
       const doorStatePayload = {
-        doorState: doorState || null,
-        door1State: door1State || null,
-        door2State: door2State || null,
+        doorState: doorState ?? null,
+        door1State: door1State ?? null,
+        door2State: door2State ?? null,
       };
 
       const suo = this.createSuo({
@@ -1218,9 +1218,9 @@ class UnifyNormalizer {
 
       // Move door state fields into payload array
       const doorStatePayload = {
-        doorState: doorState || null,
-        door1State: door1State || null,
-        door2State: door2State || null,
+        doorState: doorState ?? null,
+        door1State: door1State ?? null,
+        door2State: door2State ?? null,
       };
 
       const suo = this.createSuo({

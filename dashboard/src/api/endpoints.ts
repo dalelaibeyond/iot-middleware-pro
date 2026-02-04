@@ -10,12 +10,55 @@ import {
  */
 
 /**
+ * Transform snake_case object keys to camelCase
+ * Uses specific field name mappings for compatibility with dashboard
+ */
+function toCamelCase<T>(obj: any): T {
+  if (!obj || typeof obj !== "object") {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => toCamelCase(item)) as any;
+  }
+
+  const result: any = {};
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      // Use specific field name mappings for dashboard compatibility
+      let camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+
+      // Apply specific field name mappings
+      const fieldMappings: Record<string, string> = {
+        device_id: "deviceId",
+        device_type: "deviceType",
+        device_ip: "ip",
+        device_mac: "mac",
+        device_fwVer: "fwVer",
+        device_mask: "mask",
+        device_gwIp: "gwIp",
+        modules: "activeModules",
+      };
+
+      if (fieldMappings[key]) {
+        camelKey = fieldMappings[key];
+      }
+
+      result[camelKey] = toCamelCase(obj[key]);
+    }
+  }
+  return result;
+}
+
+/**
  * Fetches the list of all devices with their metadata
  * @returns Promise<DeviceMetadata[]> - Array of device metadata
  */
 export const getDevices = async (): Promise<DeviceMetadata[]> => {
-  const response = await apiClient.get<DeviceMetadata[]>("/api/devices");
-  return validateDeviceListResponse(response.data);
+  const response = await apiClient.get<any[]>("/api/devices");
+  // Transform snake_case to camelCase
+  const camelCaseData = toCamelCase<any[]>(response.data);
+  return validateDeviceListResponse(camelCaseData);
 };
 
 /**
@@ -28,10 +71,12 @@ export const getRackState = async (
   deviceId: string,
   moduleIndex: number,
 ): Promise<RackState> => {
-  const response = await apiClient.get<RackState>(
+  const response = await apiClient.get<any>(
     `/api/devices/${deviceId}/modules/${moduleIndex}/state`,
   );
-  const validatedData = validateRackStateResponse(response.data);
+  // Transform snake_case to camelCase
+  const camelCaseData = toCamelCase<any>(response.data);
+  const validatedData = validateRackStateResponse(camelCaseData);
   if (!validatedData) {
     throw new Error(
       `Invalid rack state data for device ${deviceId}, module ${moduleIndex}`,
