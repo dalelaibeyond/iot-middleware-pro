@@ -1329,6 +1329,19 @@ class UnifyNormalizer {
         };
         eventBus.emitDataNormalized(changeEventSuo);
       }
+
+      // Emit MODULE_INFO SUO directly with module data (not from cache)
+      // This ensures module info is not lost when MODULE_INFO arrives first
+      if (activeModules.length > 0) {
+        const moduleInfoSuo = {
+          deviceId,
+          deviceType,
+          messageType: "MODULE_INFO",
+          messageId,
+          payload: activeModules,
+        };
+        eventBus.emitDataNormalized(moduleInfoSuo);
+      }
     } else {
       // V6800 style (DEV_MOD_INFO) - handle both device and module data
       const activeModules =

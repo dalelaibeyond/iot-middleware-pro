@@ -94,32 +94,31 @@ class StateCache {
       cached.activeModules.forEach((m) => cachedModulesMap.set(m.moduleIndex, m));
 
       incomingMetadata.activeModules.forEach((incomingModule) => {
-        // Filter out invalid modules: moduleId must be non-null string
-        if (!incomingModule.moduleId || typeof incomingModule.moduleId !== 'string') {
-          console.warn(
-            `[StateCache] Skipping invalid module with moduleId=${incomingModule.moduleId} at index ${incomingModule.moduleIndex}`
-          );
-          return;
-        }
-
+        // Match modules by moduleIndex (not moduleId) to support partial module info
+        // MODULE_INFO provides: moduleIndex, fwVer (no moduleId)
+        // HEARTBEAT provides: moduleIndex, moduleId, uTotal
         const cachedModule = cachedModulesMap.get(incomingModule.moduleIndex);
 
         if (!cachedModule) {
           // New module added
-          changes.push(`Module ${incomingModule.moduleId || incomingModule.moduleIndex} added at Index ${incomingModule.moduleIndex}`);
+          const moduleId = incomingModule.moduleId || null;
+          changes.push(`Module ${moduleId || incomingModule.moduleIndex} added at Index ${incomingModule.moduleIndex}`);
           cached.activeModules.push({ ...incomingModule });
         } else {
-          // Existing module - check for changes
+          // Existing module - check for changes and merge information
+          // Update moduleId if provided (HEARTBEAT)
           if (incomingModule.moduleId && incomingModule.moduleId !== cachedModule.moduleId) {
-            changes.push(`Module ${cachedModule.moduleId} replaced with ${incomingModule.moduleId} at Index ${incomingModule.moduleIndex}`);
+            changes.push(`Module ${cachedModule.moduleId || incomingModule.moduleIndex} ID changed from ${cachedModule.moduleId || 'null'} to ${incomingModule.moduleId} at Index ${incomingModule.moduleIndex}`);
             cachedModule.moduleId = incomingModule.moduleId;
           }
-          if (incomingModule.fwVer && incomingModule.fwVer !== cachedModule.fwVer) {
-            changes.push(`Module ${incomingModule.moduleId || incomingModule.moduleIndex} Firmware changed from ${cachedModule.fwVer || 'null'} to ${incomingModule.fwVer}`);
+          // Update fwVer if provided (MODULE_INFO)
+          if (incomingModule.fwVer !== undefined && incomingModule.fwVer !== cachedModule.fwVer) {
+            changes.push(`Module ${cachedModule.moduleId || incomingModule.moduleIndex} Firmware changed from ${cachedModule.fwVer || 'null'} to ${incomingModule.fwVer}`);
             cachedModule.fwVer = incomingModule.fwVer;
           }
+          // Update uTotal if provided (HEARTBEAT)
           if (incomingModule.uTotal !== undefined && incomingModule.uTotal !== cachedModule.uTotal) {
-            changes.push(`Module ${incomingModule.moduleId || incomingModule.moduleIndex} U-Total changed from ${cachedModule.uTotal || 'null'} to ${incomingModule.uTotal}`);
+            changes.push(`Module ${cachedModule.moduleId || incomingModule.moduleIndex} U-Total changed from ${cachedModule.uTotal || 'null'} to ${incomingModule.uTotal}`);
             cachedModule.uTotal = incomingModule.uTotal;
           }
         }
