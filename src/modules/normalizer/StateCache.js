@@ -69,12 +69,16 @@ class StateCache {
 
     // Device-level change detection
     if (incomingMetadata.ip && incomingMetadata.ip !== cached.ip) {
-      changes.push(`Device IP changed from ${cached.ip || 'null'} to ${incomingMetadata.ip}`);
+      changes.push(
+        `Device IP changed from ${cached.ip || "null"} to ${incomingMetadata.ip}`,
+      );
       cached.ip = incomingMetadata.ip;
     }
 
     if (incomingMetadata.fwVer && incomingMetadata.fwVer !== cached.fwVer) {
-      changes.push(`Device Firmware changed from ${cached.fwVer || 'null'} to ${incomingMetadata.fwVer}`);
+      changes.push(
+        `Device Firmware changed from ${cached.fwVer || "null"} to ${incomingMetadata.fwVer}`,
+      );
       cached.fwVer = incomingMetadata.fwVer;
     }
 
@@ -89,9 +93,14 @@ class StateCache {
     }
 
     // Module-level change detection
-    if (incomingMetadata.activeModules && Array.isArray(incomingMetadata.activeModules)) {
+    if (
+      incomingMetadata.activeModules &&
+      Array.isArray(incomingMetadata.activeModules)
+    ) {
       const cachedModulesMap = new Map();
-      cached.activeModules.forEach((m) => cachedModulesMap.set(m.moduleIndex, m));
+      cached.activeModules.forEach((m) =>
+        cachedModulesMap.set(m.moduleIndex, m),
+      );
 
       incomingMetadata.activeModules.forEach((incomingModule) => {
         // Match modules by moduleIndex (not moduleId) to support partial module info
@@ -102,23 +111,40 @@ class StateCache {
         if (!cachedModule) {
           // New module added
           const moduleId = incomingModule.moduleId || null;
-          changes.push(`Module ${moduleId || incomingModule.moduleIndex} added at Index ${incomingModule.moduleIndex}`);
+          changes.push(
+            `Module ${moduleId || incomingModule.moduleIndex} added at Index ${incomingModule.moduleIndex}`,
+          );
           cached.activeModules.push({ ...incomingModule });
         } else {
           // Existing module - check for changes and merge information
           // Update moduleId if provided (HEARTBEAT)
-          if (incomingModule.moduleId && incomingModule.moduleId !== cachedModule.moduleId) {
-            changes.push(`Module ${cachedModule.moduleId || incomingModule.moduleIndex} ID changed from ${cachedModule.moduleId || 'null'} to ${incomingModule.moduleId} at Index ${incomingModule.moduleIndex}`);
+          if (
+            incomingModule.moduleId &&
+            incomingModule.moduleId !== cachedModule.moduleId
+          ) {
+            changes.push(
+              `Module ${cachedModule.moduleId || incomingModule.moduleIndex} ID changed from ${cachedModule.moduleId || "null"} to ${incomingModule.moduleId} at Index ${incomingModule.moduleIndex}`,
+            );
             cachedModule.moduleId = incomingModule.moduleId;
           }
           // Update fwVer if provided (MODULE_INFO)
-          if (incomingModule.fwVer !== undefined && incomingModule.fwVer !== cachedModule.fwVer) {
-            changes.push(`Module ${cachedModule.moduleId || incomingModule.moduleIndex} Firmware changed from ${cachedModule.fwVer || 'null'} to ${incomingModule.fwVer}`);
+          if (
+            incomingModule.fwVer !== undefined &&
+            incomingModule.fwVer !== cachedModule.fwVer
+          ) {
+            changes.push(
+              `Module ${cachedModule.moduleId || incomingModule.moduleIndex} Firmware changed from ${cachedModule.fwVer || "null"} to ${incomingModule.fwVer}`,
+            );
             cachedModule.fwVer = incomingModule.fwVer;
           }
           // Update uTotal if provided (HEARTBEAT)
-          if (incomingModule.uTotal !== undefined && incomingModule.uTotal !== cachedModule.uTotal) {
-            changes.push(`Module ${cachedModule.moduleId || incomingModule.moduleIndex} U-Total changed from ${cachedModule.uTotal || 'null'} to ${incomingModule.uTotal}`);
+          if (
+            incomingModule.uTotal !== undefined &&
+            incomingModule.uTotal !== cachedModule.uTotal
+          ) {
+            changes.push(
+              `Module ${cachedModule.moduleId || incomingModule.moduleIndex} U-Total changed from ${cachedModule.uTotal || "null"} to ${incomingModule.uTotal}`,
+            );
             cachedModule.uTotal = incomingModule.uTotal;
           }
         }
@@ -130,6 +156,17 @@ class StateCache {
 
     // Save to cache
     this.metadataCache.set(cacheKey, cached);
+
+    // Update deviceType in all telemetry entries for this device
+    // This ensures the /api/uos endpoint returns the correct deviceType
+    if (cached.deviceType) {
+      for (const [key, telemetry] of this.telemetryCache.entries()) {
+        if (key.startsWith(`device:${deviceId}:module:`)) {
+          telemetry.deviceType = cached.deviceType;
+          this.telemetryCache.set(key, telemetry);
+        }
+      }
+    }
 
     return changes;
   }

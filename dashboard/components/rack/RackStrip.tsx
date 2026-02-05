@@ -1,29 +1,43 @@
-import React from 'react';
-import { RFIDTag } from '../../types/schema';
-import { cn } from '../../utils/cn';
-import { useIoTStore } from '../../store/useIoTStore';
-import { PackageCheck } from 'lucide-react';
+import React from "react";
+import { RFIDTag } from "../../types/schema";
+import { cn } from "../../utils/cn";
+import { useIoTStore } from "../../store/useIoTStore";
+import { PackageCheck } from "lucide-react";
 
 interface RackStripProps {
   uTotal: number;
   rfidData?: RFIDTag[];
 }
 
-export const RackStrip: React.FC<RackStripProps> = ({ uTotal, rfidData = [] }) => {
+export const RackStrip: React.FC<RackStripProps> = ({
+  uTotal,
+  rfidData = [],
+}) => {
   const { isNocMode } = useIoTStore();
 
   // Create a map of sensor index to RFID tag for quick lookup
-  const rfidMap = new Map<number, RFIDTag>(rfidData.map(r => [r.sensorIndex, r]));
+  const rfidMap = new Map<number, RFIDTag>(
+    rfidData.map((r) => [r.sensorIndex, r]),
+  );
 
   return (
     <div className="flex flex-col gap-4 h-full">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <PackageCheck className={cn("w-4 h-4", isNocMode ? "text-sky-400 scale-125 transition-transform" : "text-sky-400")} />
-          <h3 className={cn(
-            "font-bold text-slate-300 uppercase tracking-tight transition-all",
-            isNocMode ? "text-lg text-white" : "text-sm"
-          )}>
+          <PackageCheck
+            className={cn(
+              "w-4 h-4",
+              isNocMode
+                ? "text-sky-400 scale-125 transition-transform"
+                : "text-sky-400",
+            )}
+          />
+          <h3
+            className={cn(
+              "font-bold text-slate-300 uppercase tracking-tight transition-all",
+              isNocMode ? "text-lg text-white" : "text-sm",
+            )}
+          >
             Physical Twin
           </h3>
         </div>
@@ -35,7 +49,7 @@ export const RackStrip: React.FC<RackStripProps> = ({ uTotal, rfidData = [] }) =
       {/* Rack Strip Visualization */}
       <div className="flex-1 flex flex-col gap-1 overflow-y-auto scroll-smooth">
         {Array.from({ length: uTotal }).map((_, uIndex) => {
-          const uPosition = uTotal - uIndex; // U positions are numbered from bottom (1) to top (uTotal)
+          const uPosition = uIndex + 1; // U positions are numbered from top (1) to bottom (uTotal)
           const rfidTag = rfidMap.get(uPosition);
           const isOccupied = !!rfidTag;
 
@@ -49,7 +63,7 @@ export const RackStrip: React.FC<RackStripProps> = ({ uTotal, rfidData = [] }) =
                     ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
                     : "bg-emerald-500/20 border-emerald-500/50 text-emerald-300"
                   : "bg-slate-800/50 border-slate-700/50 text-slate-600",
-                isNocMode && "h-12"
+                isNocMode && "h-12",
               )}
             >
               <div className="flex items-center gap-2">
