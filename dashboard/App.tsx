@@ -54,8 +54,13 @@ const App: React.FC = () => {
   useEffect(() => {
     if (activeDeviceId && activeModuleIndex !== null) {
       const fetchDetail = async () => {
-        const state = await getRackState(activeDeviceId, activeModuleIndex);
-        setActiveRack(state);
+        try {
+          const state = await getRackState(activeDeviceId, activeModuleIndex);
+          setActiveRack(state);
+        } catch (err) {
+          console.error("Failed to fetch rack state:", err);
+          setActiveRack(null); // Clear rack state on error
+        }
       };
       fetchDetail();
     }

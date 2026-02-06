@@ -6,10 +6,8 @@ import axios, {
 
 // Create axios instance with default configuration
 const apiClient: AxiosInstance = axios.create({
-  // Use relative URL in development to leverage Vite's proxy
-  baseURL: import.meta.env.DEV
-    ? ""
-    : import.meta.env.VITE_API_URL || "http://localhost:3000",
+  // Always use direct URL to middleware API
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:3000",
   timeout: 10000,
   headers: {
     "Content-Type": "application/json",

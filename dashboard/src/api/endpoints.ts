@@ -85,7 +85,30 @@ export const getRackState = async (
   );
   // Transform snake_case to camelCase
   const camelCaseData = toCamelCase<any>(response.data);
-  const validatedData = validateRackStateResponse(camelCaseData);
+  
+  // Provide defaults for missing fields to ensure complete RackState
+  const completeData = {
+    deviceId: camelCaseData.deviceId || deviceId,
+    moduleIndex: camelCaseData.moduleIndex ?? moduleIndex,
+    isOnline: camelCaseData.isOnline ?? true,
+    // Sensor arrays with defaults
+    rfidSnapshot: camelCaseData.rfidSnapshot || camelCaseData.rfid_snapshot || [],
+    tempHum: camelCaseData.tempHum || camelCaseData.temp_hum || [],
+    noiseLevel: camelCaseData.noiseLevel || camelCaseData.noise_level || [],
+    // Door states
+    doorState: camelCaseData.doorState ?? null,
+    door1State: camelCaseData.door1State ?? null,
+    door2State: camelCaseData.door2State ?? null,
+    // Timestamps
+    lastSeenHb: camelCaseData.lastSeenHb || camelCaseData.lastSeen_hb || null,
+    lastSeenTh: camelCaseData.lastSeenTh || camelCaseData.lastSeen_th || null,
+    lastSeenNs: camelCaseData.lastSeenNs || camelCaseData.lastSeen_ns || null,
+    lastSeenRfid: camelCaseData.lastSeenRfid || camelCaseData.lastSeen_rfid || null,
+    lastSeenDoor: camelCaseData.lastSeenDoor || camelCaseData.lastSeen_door || null,
+    ...camelCaseData, // Spread original data to preserve any additional fields
+  };
+  
+  const validatedData = validateRackStateResponse(completeData);
   if (!validatedData) {
     throw new Error(
       `Invalid rack state data for device ${deviceId}, module ${moduleIndex}`,

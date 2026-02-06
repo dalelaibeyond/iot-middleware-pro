@@ -40,8 +40,8 @@ export const validateDeviceMetadata = (data: any): data is DeviceMetadata => {
     typeof deviceId === "string" &&
     typeof deviceType === "string" &&
     typeof ip === "string" &&
-    // fwVer can be null for V6800 devices
-    (fwVer === null || typeof fwVer === "string") &&
+    // fwVer can be null, undefined, or string
+    (fwVer === null || fwVer === undefined || typeof fwVer === "string") &&
     // isOnline is optional in middleware response
     (data.isOnline === undefined || typeof data.isOnline === "boolean") &&
     Array.isArray(modules) &&
@@ -57,54 +57,28 @@ export const validateDeviceMetadata = (data: any): data is DeviceMetadata => {
 /**
  * Validates structure of a RackState object
  * Supports both camelCase and snake_case field names
+ * Note: Makes sensor arrays optional to support partial data from API
  */
 export const validateRackState = (data: any): data is RackState => {
-  // Add comprehensive logging for debugging
-  console.log("validateRackState input:", JSON.stringify(data, null, 2));
+  // Support both camelCase and snake_case for sensor arrays
+  const rfidSnapshot = data.rfidSnapshot || data.rfid_snapshot;
+  const tempHum = data.tempHum || data.temp_hum;
+  const noiseLevel = data.noiseLevel || data.noise_level;
 
-  const checks = {
-    deviceId: typeof data.deviceId === "string",
-    moduleIndex: typeof data.moduleIndex === "number",
-    isOnline: typeof data.isOnline === "boolean",
-    lastSeenHb: data.lastSeenHb === undefined || data.lastSeenHb === null || typeof data.lastSeenHb === "string",
-    lastSeen_hb: data.lastSeenHb === undefined || data.lastSeenHb === null || typeof data.lastSeenHb === "string",
-    lastSeen_hb_camelCase: data.lastSeenHb === undefined || data.lastSeen_hb === null || typeof data.lastSeenHb === "string",
-    rfidSnapshot: Array.isArray(data.rfidSnapshot) || Array.isArray(data.rfid_snapshot),
-    rfidSnapshot_camelCase: Array.isArray(data.rfidSnapshot) || Array.isArray(data.rfid_snapshot),
-    tempHum: Array.isArray(data.tempHum) || Array.isArray(data.temp_hum),
-    tempHum_camelCase: Array.isArray(data.tempHum) || Array.isArray(data.temp_hum),
-    noiseLevel: Array.isArray(data.noiseLevel) || Array.isArray(data.noise_level),
-    noiseLevel_camelCase: Array.isArray(data.noiseLevel) || Array.isArray(data.noise_level),
-    doorState: data.doorState === null || typeof data.doorState === "number",
-    door1State: data.door1State === null || typeof data.door1State === "number",
-    door2State: data.door2State === null || typeof data.door2State === "number",
-  };
-
-  console.log("validateRackState checks:", checks);
-
-  const result = (
+  return (
     data &&
     typeof data.deviceId === "string" &&
     typeof data.moduleIndex === "number" &&
     typeof data.isOnline === "boolean" &&
-    // Support both camelCase and snake_case field names
-    // camelCase: lastSeenHb, tempHum, noiseLevel, rfidSnapshot, lastSeenTh, lastSeenNs, lastSeenRfid, lastSeenDoor, uTotal
-    // snake_case: lastSeen_hb, temp_hum, noise_level, rfid_snapshot, lastSeen_th, lastSeen_ns, lastSeen_rfid, lastSeen_door
-    (data.lastSeenHb === undefined || data.lastSeenHb === null || typeof data.lastSeenHb === "string") &&
-    (data.lastSeen_hb === undefined || data.lastSeenHb === null || typeof data.lastSeenHb === "string") &&
-    // Arrays can be empty - support both naming conventions
-    (Array.isArray(data.rfidSnapshot) || Array.isArray(data.rfid_snapshot)) &&
-    (Array.isArray(data.tempHum) || Array.isArray(data.temp_hum)) &&
-    (Array.isArray(data.noiseLevel) || Array.isArray(data.noise_level)) &&
-    // Door states can be null - support both naming conventions
-    (data.doorState === null || typeof data.doorState === "number") &&
-    (data.door1State === null || typeof data.door1State === "number") &&
-    (data.door2State === null || typeof data.door2State === "number")
+    // Sensor arrays are optional - if present, must be arrays
+    (rfidSnapshot === undefined || Array.isArray(rfidSnapshot)) &&
+    (tempHum === undefined || Array.isArray(tempHum)) &&
+    (noiseLevel === undefined || Array.isArray(noiseLevel)) &&
+    // Door states can be null or undefined
+    (data.doorState === undefined || data.doorState === null || typeof data.doorState === "number") &&
+    (data.door1State === undefined || data.door1State === null || typeof data.door1State === "number") &&
+    (data.door2State === undefined || data.door2State === null || typeof data.door2State === "number")
   );
-
-  console.log("validateRackState result:", result);
-
-  return result;
 };
 
 /**

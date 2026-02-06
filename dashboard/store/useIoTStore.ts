@@ -68,25 +68,30 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
     const suoModuleIndex = suo.moduleIndex !== undefined ? Number(suo.moduleIndex) : undefined;
     const storeModuleIndex = activeModuleIndex !== null ? Number(activeModuleIndex) : null;
 
-    // Debug logging to diagnose update issues
-    console.log("[mergeUpdate] Context check:", {
-      suoDeviceId,
-      storeDeviceId,
-      suoModuleIndex,
-      storeModuleIndex,
-      deviceMatch: suoDeviceId === storeDeviceId,
-      moduleMatch: suoModuleIndex === storeModuleIndex,
-    });
-
     if (
       suoDeviceId !== storeDeviceId ||
       (suoModuleIndex !== undefined && suoModuleIndex !== storeModuleIndex)
     ) {
-      console.log("[mergeUpdate] Ignored - context mismatch");
       return; // Ignore if not currently viewed
     }
 
-    if (!activeRack) return;
+    // If no activeRack exists, create a minimal one for this device/module
+    if (!activeRack) {
+      activeRack = {
+        deviceId: suoDeviceId,
+        moduleIndex: suoModuleIndex || 0,
+        isOnline: true,
+        rfid_snapshot: [],
+        rfidSnapshot: [],
+        temp_hum: [],
+        tempHum: [],
+        noise_level: [],
+        noiseLevel: [],
+        doorState: null,
+        door1State: null,
+        door2State: null,
+      };
+    }
 
     let newRack = { ...activeRack };
 
@@ -129,25 +134,14 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
         // Extract the first element from the array
         const doorData = Array.isArray(suo.payload) ? suo.payload[0] : suo.payload;
         
-        console.log("[mergeUpdate] DOOR_STATE payload:", suo.payload);
-        console.log("[mergeUpdate] Extracted doorData:", doorData);
-        console.log("[mergeUpdate] Current rack door states:", {
-          doorState: newRack.doorState,
-          door1State: newRack.door1State,
-          door2State: newRack.door2State,
-        });
-        
         if (doorData && doorData.door1State !== undefined) {
           newRack.door1State = doorData.door1State;
-          console.log("[mergeUpdate] Updated door1State:", doorData.door1State);
         }
         if (doorData && doorData.door2State !== undefined) {
           newRack.door2State = doorData.door2State;
-          console.log("[mergeUpdate] Updated door2State:", doorData.door2State);
         }
         if (doorData && doorData.doorState !== undefined) {
           newRack.doorState = doorData.doorState;
-          console.log("[mergeUpdate] Updated doorState:", doorData.doorState);
         }
         break;
       case "NOISE":
@@ -161,7 +155,6 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
       case "META_CHANGED_EVENT":
         // This is a notification that metadata has changed
         // We could trigger a toast notification here
-        console.log("Metadata changed event received:", suo.payload);
         break;
     }
 

@@ -123,7 +123,15 @@ class V6800Parser {
       }
 
       // Extract common envelope fields
-      const deviceId = this.extractDeviceId(json);
+      // Try to get deviceId from payload first, then extract from topic as fallback
+      let deviceId = this.extractDeviceId(json);
+      if (!deviceId && topic) {
+        // Extract deviceId from topic format: V6800Upload/{deviceId}/...
+        const topicParts = topic.split('/');
+        if (topicParts.length >= 2 && topicParts[0] === 'V6800Upload') {
+          deviceId = topicParts[1];
+        }
+      }
       const messageId = this.extractMessageId(json);
       const ip = json.gateway_ip || null;
       const mac = json.gateway_mac || null;
@@ -177,11 +185,25 @@ class V6800Parser {
       return json.module_sn ? String(json.module_sn) : "";
     }
     // Check for both possible field names: gateway_sn and gateway_id
-    return json.gateway_sn
+    // Also check device_id, dev_id, sn for other message types (e.g., DOOR_STATE)
+    const deviceId = json.gateway_sn
       ? String(json.gateway_sn)
       : json.gateway_id
         ? String(json.gateway_id)
-        : "";
+        : json.device_id
+          ? String(json.device_id)
+          : json.dev_id
+            ? String(json.dev_id)
+            : json.sn
+              ? String(json.sn)
+              : "";
+    
+    // Debug logging for empty deviceId
+    if (!deviceId) {
+      console.log("[V6800Parser] extractDeviceId - empty result, available fields:", Object.keys(json));
+    }
+    
+    return deviceId;
   }
 
   /**
