@@ -38,6 +38,15 @@ function toCamelCase<T>(obj: any): T {
         device_mask: "mask",
         device_gwIp: "gwIp",
         modules: "activeModules",
+        // Rack state field mappings
+        rfid_snapshot: "rfidSnapshot",
+        temp_hum: "tempHum",
+        noise_level: "noiseLevel",
+        last_seen_hb: "lastSeenHb",
+        last_seen_th: "lastSeenTh",
+        last_seen_ns: "lastSeenNs",
+        last_seen_rfid: "lastSeenRfid",
+        last_seen_door: "lastSeenDoor",
       };
 
       if (fieldMappings[key]) {

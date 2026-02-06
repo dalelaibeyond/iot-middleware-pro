@@ -141,6 +141,11 @@ class WebSocketServer {
       if (client.readyState === WebSocket.OPEN) {
         try {
           client.send(payload);
+
+          //TEMP-LOG
+          console.log("Sent to WebSocket client:", suo);
+
+
         } catch (error) {
           console.error("Failed to send to WebSocket client:", error.message);
           this.clients.delete(client);

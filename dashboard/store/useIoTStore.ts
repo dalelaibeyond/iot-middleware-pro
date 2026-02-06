@@ -62,10 +62,27 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
     }
 
     // Branch 2: Rack Update (Context-Aware)
+    // Normalize types to handle string/number mismatch (e.g., from URL params vs WebSocket)
+    const suoDeviceId = String(suo.deviceId);
+    const storeDeviceId = activeDeviceId ? String(activeDeviceId) : null;
+    const suoModuleIndex = suo.moduleIndex !== undefined ? Number(suo.moduleIndex) : undefined;
+    const storeModuleIndex = activeModuleIndex !== null ? Number(activeModuleIndex) : null;
+
+    // Debug logging to diagnose update issues
+    console.log("[mergeUpdate] Context check:", {
+      suoDeviceId,
+      storeDeviceId,
+      suoModuleIndex,
+      storeModuleIndex,
+      deviceMatch: suoDeviceId === storeDeviceId,
+      moduleMatch: suoModuleIndex === storeModuleIndex,
+    });
+
     if (
-      suo.deviceId !== activeDeviceId ||
-      (suo.moduleIndex !== undefined && suo.moduleIndex !== activeModuleIndex)
+      suoDeviceId !== storeDeviceId ||
+      (suoModuleIndex !== undefined && suoModuleIndex !== storeModuleIndex)
     ) {
+      console.log("[mergeUpdate] Ignored - context mismatch");
       return; // Ignore if not currently viewed
     }
 
@@ -75,33 +92,71 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
 
     switch (suo.messageType) {
       case "TEMP_HUM":
-        newRack.temp_hum = newRack.temp_hum.map((th) =>
-          th.sensorIndex === suo.payload.sensorIndex
-            ? { ...th, ...suo.payload }
-            : th,
-        );
+      case "QRY_TEMP_HUM_RESP":
+        // Backend sends payload as array of all temp/hum readings
+        if (Array.isArray(suo.payload)) {
+          newRack.temp_hum = suo.payload;
+          newRack.tempHum = suo.payload;
+        }
         break;
       case "HEARTBEAT":
         newRack.isOnline = true;
         newRack.lastSeen_hb = new Date().toISOString();
+        newRack.lastSeenHb = newRack.lastSeen_hb;
         break;
       case "RFID_SNAPSHOT":
-        newRack.rfid_snapshot = suo.payload; // Usually full array update
+      case "RFID_EVENT":
+        // Update both snake_case and camelCase field names for consistency
+        // RFID_SNAPSHOT: Full array replacement | RFID_EVENT: Single tag update
+        if (Array.isArray(suo.payload)) {
+          // Full snapshot replacement
+          newRack.rfid_snapshot = suo.payload;
+          newRack.rfidSnapshot = suo.payload;
+        } else if (suo.payload && typeof suo.payload === 'object') {
+          // Single RFID event - merge into existing array
+          const currentRfid = newRack.rfidSnapshot || newRack.rfid_snapshot || [];
+          const updatedRfid = currentRfid.map((tag) =>
+            tag.sensorIndex === suo.payload.sensorIndex
+              ? { ...tag, ...suo.payload }
+              : tag,
+          );
+          newRack.rfid_snapshot = updatedRfid;
+          newRack.rfidSnapshot = updatedRfid;
+        }
         break;
       case "DOOR_STATE":
-        if (suo.payload.door1State !== undefined)
-          newRack.door1State = suo.payload.door1State;
-        if (suo.payload.door2State !== undefined)
-          newRack.door2State = suo.payload.door2State;
-        if (suo.payload.doorState !== undefined)
-          newRack.doorState = suo.payload.doorState;
+        // Backend sends payload as array: [{doorState, door1State, door2State}]
+        // Extract the first element from the array
+        const doorData = Array.isArray(suo.payload) ? suo.payload[0] : suo.payload;
+        
+        console.log("[mergeUpdate] DOOR_STATE payload:", suo.payload);
+        console.log("[mergeUpdate] Extracted doorData:", doorData);
+        console.log("[mergeUpdate] Current rack door states:", {
+          doorState: newRack.doorState,
+          door1State: newRack.door1State,
+          door2State: newRack.door2State,
+        });
+        
+        if (doorData && doorData.door1State !== undefined) {
+          newRack.door1State = doorData.door1State;
+          console.log("[mergeUpdate] Updated door1State:", doorData.door1State);
+        }
+        if (doorData && doorData.door2State !== undefined) {
+          newRack.door2State = doorData.door2State;
+          console.log("[mergeUpdate] Updated door2State:", doorData.door2State);
+        }
+        if (doorData && doorData.doorState !== undefined) {
+          newRack.doorState = doorData.doorState;
+          console.log("[mergeUpdate] Updated doorState:", doorData.doorState);
+        }
         break;
       case "NOISE":
-        newRack.noise_level = newRack.noise_level.map((n) =>
-          n.sensorIndex === suo.payload.sensorIndex
-            ? { ...n, ...suo.payload }
-            : n,
-        );
+      case "NOISE_LEVEL":
+        // Backend sends payload as array of all noise readings
+        if (Array.isArray(suo.payload)) {
+          newRack.noise_level = suo.payload;
+          newRack.noiseLevel = suo.payload;
+        }
         break;
       case "META_CHANGED_EVENT":
         // This is a notification that metadata has changed

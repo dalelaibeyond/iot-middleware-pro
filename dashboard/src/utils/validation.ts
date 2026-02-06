@@ -13,9 +13,12 @@ export const isValidMessageType = (value: string): value is MessageType => {
     "DEVICE_METADATA",
     "HEARTBEAT",
     "TEMP_HUM",
+    "QRY_TEMP_HUM_RESP",  // Query response for temp/hum
     "RFID_SNAPSHOT",
+    "RFID_EVENT",         // Individual RFID tag event
     "DOOR_STATE",
-    "NOISE",
+    "NOISE",              // Short alias for NOISE_LEVEL
+    "NOISE_LEVEL",        // Full message type from backend
     "META_CHANGED_EVENT",
   ].includes(value);
 };

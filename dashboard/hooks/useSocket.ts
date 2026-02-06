@@ -26,6 +26,7 @@ export const useSocket = () => {
       wsRef.current.onmessage = (event) => {
         const data = validateWebSocketMessage(event.data);
         if (data) {
+          console.log("[useSocket.ts]Received SUO message from middleware:", data);
           mergeUpdate(data);
         }
       };
