@@ -79,24 +79,22 @@ const App: React.FC = () => {
     )?.uTotal || 42;
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
+    <div className="app-root">
       <Sidebar />
 
-      <main className="flex-1 flex flex-col min-w-0 transition-all duration-500">
+      <main className="app-main">
         <TopBar />
 
         {activeRack ? (
           <div
             className={cn(
-              "flex-1 p-6 gap-6 overflow-hidden transition-all duration-500",
-              isNocMode
-                ? "grid grid-cols-1 max-w-4xl mx-auto w-full"
-                : "grid grid-cols-1 lg:grid-cols-[320px_1fr_320px]",
+              "app-grid",
+              isNocMode && "app-grid-noc"
             )}
           >
             {/* Zone A: Security */}
             {!isNocMode && (
-              <section className="glass-panel overflow-y-auto animate-in fade-in slide-in-from-left duration-500">
+              <section className="app-zone-section animate-in fade-in slide-in-from-left duration-500">
                 <DoorPanel
                   doorState={activeRack.doorState}
                   door1State={activeRack.door1State}
@@ -108,13 +106,12 @@ const App: React.FC = () => {
             {/* Zone B: Rack Visualizer - Center Stage */}
             <section
               className={cn(
-                "glass-panel flex flex-col overflow-hidden relative transition-all duration-500",
-                isNocMode &&
-                  "ring-2 ring-sky-500/20 shadow-[0_0_50px_rgba(14,165,233,0.1)]",
+                "app-rack-section",
+                isNocMode && "app-rack-noc"
               )}
             >
-              <div className="absolute top-0 right-0 p-4 z-20">
-                <div className="flex items-center gap-2 px-3 py-1 bg-slate-950/80 rounded-full border border-slate-800 backdrop-blur-sm shadow-xl">
+              <div className="app-badge">
+                <div className="app-badge-inner">
                   {isNocMode ? (
                     <Maximize2 className="w-3 h-3 text-sky-400" />
                   ) : (
@@ -130,7 +127,7 @@ const App: React.FC = () => {
 
             {/* Zone C: Environment */}
             {!isNocMode && (
-              <section className="glass-panel overflow-y-auto animate-in fade-in slide-in-from-right duration-500">
+              <section className="app-zone-section animate-in fade-in slide-in-from-right duration-500">
                 <EnvList
                   tempHum={activeRack.tempHum || activeRack.temp_hum || []}
                   noise={activeRack.noiseLevel || activeRack.noise_level || []}
@@ -139,7 +136,7 @@ const App: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-600 gap-4">
+          <div className="app-empty-state">
             <MonitorOff className="w-16 h-16 opacity-20" />
             <div className="text-center">
               <h2 className="text-lg font-bold text-slate-400">
