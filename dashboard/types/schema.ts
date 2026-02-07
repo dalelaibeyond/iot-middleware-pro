@@ -48,8 +48,8 @@ export interface ModuleMetadata {
 export interface DeviceMetadata {
   deviceId: string;
   deviceType: string;
-  ip: string;
-  fwVer: string;
+  ip: string | null;
+  fwVer: string | null;
   isOnline: boolean;
   activeModules: ModuleMetadata[];
 }

@@ -35,23 +35,34 @@ export const validateDeviceMetadata = (data: any): data is DeviceMetadata => {
   const fwVer = data.fwVer || data.device_fwVer;
   const modules = data.activeModules || data.modules;
 
-  return (
-    data &&
-    typeof deviceId === "string" &&
-    typeof deviceType === "string" &&
-    typeof ip === "string" &&
-    // fwVer can be null, undefined, or string
-    (fwVer === null || fwVer === undefined || typeof fwVer === "string") &&
-    // isOnline is optional in middleware response
-    (data.isOnline === undefined || typeof data.isOnline === "boolean") &&
-    Array.isArray(modules) &&
-    modules.every(
-      (module: any) =>
-        typeof module.moduleIndex === "number" &&
-        typeof module.moduleId === "string" &&
-        typeof module.uTotal === "number",
-    )
+  const hasDeviceId = data && typeof deviceId === "string";
+  const hasDeviceType = typeof deviceType === "string";
+  // ip can be null when device hasn't reported yet
+  const hasValidIp = ip === null || ip === undefined || typeof ip === "string";
+  const hasValidFwVer = fwVer === null || fwVer === undefined || typeof fwVer === "string";
+  const hasValidOnline = data.isOnline === undefined || typeof data.isOnline === "boolean";
+  const hasValidModules = Array.isArray(modules) && modules.every(
+    (module: any) =>
+      typeof module.moduleIndex === "number" &&
+      typeof module.moduleId === "string" &&
+      typeof module.uTotal === "number",
   );
+
+  const isValid = hasDeviceId && hasDeviceType && hasValidIp && hasValidFwVer && hasValidOnline && hasValidModules;
+
+  if (!isValid) {
+    console.log("[DEBUG] Device validation failed for:", deviceId, {
+      hasDeviceId,
+      hasDeviceType,
+      hasValidIp,
+      hasValidFwVer,
+      hasValidOnline,
+      hasValidModules,
+      modules,
+    });
+  }
+
+  return isValid;
 };
 
 /**
