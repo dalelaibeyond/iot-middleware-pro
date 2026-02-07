@@ -114,7 +114,7 @@ The dashboard integrates with the IoT Middleware through:
 ### Project Structure
 
 ```
-iot-ops-digital-twin-dashboard/
+dashboard/
 ├── src/
 │   ├── api/          # API client and endpoints
 │   ├── components/    # React components

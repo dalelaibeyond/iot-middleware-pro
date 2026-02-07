@@ -122,7 +122,7 @@ VITE_APP_VERSION=1.2.0
 ## How to Run the Dashboard
 
 1. Ensure the IoT Middleware is running on ports 3000 (API) and 3001 (WebSocket)
-2. Navigate to the dashboard directory: `cd iot-ops-digital-twin-dashboard`
+2. Navigate to the dashboard directory: `cd dashboard`
 3. Install dependencies: `npm install`
 4. Start the development server: `npm run dev`
 5. Open your browser and navigate to `http://localhost:5173`

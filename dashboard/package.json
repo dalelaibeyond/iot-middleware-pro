@@ -1,5 +1,5 @@
 {
-  "name": "iot-ops-digital-twin-dashboard",
+  "name": "dashboard",
   "private": true,
   "version": "0.0.0",
   "type": "module",

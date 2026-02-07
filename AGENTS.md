@@ -13,17 +13,28 @@
 - **Command Support**: Outbound commands for device control and synchronization
 
 ### Technology Stack
+
+#### Backend
 | Component | Technology |
 |-----------|------------|
 | Runtime | Node.js v18+ |
-| Backend Language | JavaScript (CommonJS) |
-| Frontend | React 19 + TypeScript + Vite |
-| Styling | Tailwind CSS |
-| State Management | Zustand |
+| Language | JavaScript (CommonJS) |
 | Database | MySQL 8.0 (Knex.js + mysql2) |
 | Transport | MQTT (mqtt library) |
 | API | Express.js |
+| Logging | Winston |
 | Testing | Jest |
+
+#### Frontend (Dashboard)
+| Component | Technology |
+|-----------|------------|
+| Framework | React 19 |
+| Language | TypeScript |
+| Build Tool | Vite |
+| Styling | Tailwind CSS |
+| State Management | Zustand |
+| HTTP Client | Axios |
+| Icons | Lucide React |
 
 ---
 
@@ -58,19 +69,27 @@ iot-middleware-pro/
 │   │       ├── WebSocketServer.js # Real-time feed (port 3001)
 │   │       ├── MqttRelay.js       # MQTT relay output
 │   │       └── WebhookService.js  # Webhook notifications
-│   └── index.js                   # Application entry point
-├── dashboard/                     # React/Vite frontend
-│   ├── App.tsx                    # Main app component
-│   ├── components/                # UI components
-│   ├── hooks/                     # Custom React hooks
-│   ├── store/                     # Zustand store
-│   └── src/api/                   # API client
+│   └── index.js                  # Application entry point
+├── dashboard/                    # React/Vite frontend
+│   ├── App.tsx                   # Main app component
+│   ├── components/               # UI components
+│   │   ├── layout/               # Layout components (Sidebar, TopBar)
+│   │   ├── rack/                 # Rack visualization components
+│   │   └── ui/                   # UI primitives (Badge, ErrorDisplay, etc.)
+│   ├── hooks/                    # Custom React hooks
+│   ├── store/                    # Zustand store
+│   ├── services/                 # API services
+│   ├── types/                    # TypeScript type definitions
+│   └── utils/                    # Utility functions
 ├── database/
-│   └── schema.sql                 # MySQL schema
-├── tests/                         # Test files
-└── openspec/                      # Architecture specifications
-    ├── AGENTS.md                  # OpenSpec agent personas
-    └── specs/                     # Detailed specifications
+│   └── schema.sql                # MySQL schema
+├── tests/                        # Test files
+│   ├── verify_v6800.js           # V6800 parser verification (19 test cases)
+│   ├── verify_pipeline.js        # End-to-end pipeline validation
+│   └── test_*.js                 # Various test scripts
+└── openspec/                     # Architecture specifications
+    ├── AGENTS.md                 # OpenSpec agent personas
+    └── specs/                    # Detailed specifications
 ```
 
 ---
@@ -89,9 +108,9 @@ Ingest (MQTT) → Parse (SIF) → Normalize (SUO) → Distribute (Storage/API/WS
 
 ### Stage 2: Parse
 - **ParserManager.js** routes to appropriate parser based on topic prefix
-- **V5008Parser.js**: Parses binary format → SIF
+- **V5008Parser.js**: Parses binary format → SIF (Standard Intermediate Format)
 - **V6800Parser.js**: Parses JSON format → SIF
-- **Output**: SIF (Standard Intermediate Format):
+- **Output**: SIF structure:
   ```javascript
   {
     deviceId: "string",
@@ -140,7 +159,54 @@ database → eventBus → stateCache → mqttSubscriber → parserManager → no
 
 ---
 
-## 4. Code Style & Conventions
+## 4. Build & Test Commands
+
+### Backend (Node.js)
+```bash
+# Install dependencies
+npm install
+
+# Run production server
+npm start
+
+# Run with auto-reload (nodemon)
+npm run dev
+
+# Run Jest tests
+npm test
+```
+
+### Frontend (React/Vite)
+```bash
+cd dashboard
+
+# Install dependencies
+npm install
+
+# Start dev server (http://localhost:5173)
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+### Database Setup
+```bash
+mysql -u root -p < database/schema.sql
+```
+
+### Key Test Files
+- `tests/verify_v6800.js`: V6800 parser verification (19 test cases)
+- `tests/verify_pipeline.js`: End-to-end pipeline validation
+- `tests/test_mqtt_subscriber.js`: MQTT listener pattern
+- `tests/test_api_commands_simple.js`: Command API testing pattern
+
+---
+
+## 5. Code Style & Conventions
 
 ### JavaScript (Backend: CommonJS)
 - **Module format**: `require()`/`module.exports` (CommonJS, not ESM)
@@ -162,47 +228,15 @@ database → eventBus → stateCache → mqttSubscriber → parserManager → no
 
 ### TypeScript (Frontend: React)
 - **Stack**: React 19 + Vite + Tailwind CSS + Zustand
-- **Hooks pattern**: Use `useState`, `useEffect`, custom hooks (`useSocket`, `useIoTStore`)
+- **Hooks pattern**: Use `useState`, `useEffect`, custom hooks (`useSocket`, `useDeviceStore`)
 - **Component design**: Atomic Design principles—small, reusable components in `dashboard/components/{layout,rack,ui}/`
 - **State merging**: Context-aware updates—ignore SUOs for inactive devices using `get()` to check active context
 
 ### Configuration
 - Load via `const config = require("config")` then `config.get("modules.storage.enabled")`
-- **Never hardcode credentials**—all secrets come from `config/default.json`
+- **Never hardcode credentials**—all secrets come from `config/default.json` or environment variables
 - **Per-module config**: Each module receives config in `initialize(moduleConfig)` parameter
 - **Enable/disable pattern**: Check `moduleConfig.enabled === false` before starting
-
----
-
-## 5. Build & Test Commands
-
-### Backend (Node.js)
-```bash
-npm install              # Install dependencies
-npm start                # Run production server
-npm run dev              # Run with auto-reload (nodemon)
-npm test                 # Run Jest tests
-```
-
-### Frontend (React/Vite)
-```bash
-cd dashboard
-npm install              # Install dashboard dependencies
-npm run dev              # Start dev server (http://localhost:5173)
-npm run build            # Build for production
-npm run preview          # Preview production build
-```
-
-### Database Setup
-```bash
-mysql -u root -p < database/schema.sql
-```
-
-### Key Test Files
-- `tests/test_api_commands_simple.js`: Command API testing pattern
-- `tests/verify_pipeline.js`: End-to-end pipeline validation
-- `tests/test_mqtt_subscriber.js`: MQTT listener pattern
-- `tests/verify_v6800.js`: V6800 parser verification (19 test cases)
 
 ---
 
@@ -239,7 +273,37 @@ mysql -u root -p < database/schema.sql
 
 ---
 
-## 7. Integration Points
+## 7. Testing Approach
+
+- **Direct module calls**: Initialize modules with config, call methods with fixtures, no mocking library
+- **Real dependencies**: Tests use real MQTT connections, real HTTP requests (Node's `http` module)
+- **Fixture-driven**: Reuse config from `config/default.json` in tests
+
+### Jest Configuration (`jest.config.js`)
+```javascript
+module.exports = {
+  testEnvironment: 'node',
+  testMatch: ['**/*.test.js'],
+  collectCoverageFrom: ['src/**/*.js'],
+  coverageDirectory: 'coverage',
+  moduleDirectories: ['node_modules', 'src'],
+};
+```
+
+### Running Tests
+```bash
+# Run all Jest tests
+npm test
+
+# Run specific verification scripts
+node tests/verify_v6800.js
+node tests/verify_pipeline.js
+node tests/test_api_commands_simple.js
+```
+
+---
+
+## 8. Integration Points
 
 ### MQTT Ingress
 - Topics configured in `config/default.json` (`mqtt.topics.v5008`, `mqtt.topics.v6800`)
@@ -277,16 +341,16 @@ POST /api/commands
 ### WebSocket Feed
 - **Client**: `dashboard/hooks/useSocket.ts` with exponential backoff (2s → 4s → 8s, max 5 attempts)
 - **Server**: `src/modules/output/WebSocketServer.js` broadcasts SUOs to connected clients
-- **Validation**: `validateWebSocketMessage()` before merging to Zustand store
+- **Port**: 3001 (configurable in `config/default.json`)
 
 ### Command Egress
-- Dashboard submits to `POST /api/command`
+- Dashboard submits to `POST /api/commands`
 - `CommandService.js` handles async device control
 - Publishes to `V5008Download/{deviceId}` or `V6800Download/{deviceId}`
 
 ---
 
-## 8. Security & Error Handling
+## 9. Security & Error Handling
 
 ### Input Validation
 - **Binary parsing**: Validate buffer length before reading bytes—never trust external input
@@ -305,57 +369,7 @@ POST /api/commands
 
 ---
 
-## 9. Testing Approach
-
-- **Direct module calls**: Initialize modules with config, call methods with fixtures, no mocking library
-- **Real dependencies**: Tests use real MQTT connections, real HTTP requests (Node's `http` module)
-- **Fixture-driven**: Reuse config from `config/default.json` in tests
-
-### Jest Configuration (`jest.config.js`)
-```javascript
-module.exports = {
-  testEnvironment: 'node',
-  testMatch: ['**/*.test.js'],
-  collectCoverageFrom: ['src/**/*.js'],
-  coverageDirectory: 'coverage',
-  moduleDirectories: ['node_modules', 'src'],
-};
-```
-
----
-
-## 10. OpenSpec Guidelines
-
-**Always open `@/openspec/AGENTS.md` when the request:**
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-**Use `@/openspec/AGENTS.md` to:**
-- Understand how to create and apply change proposals
-- Learn the formal spec format and conventions
-- Reference project structure guidelines and agency roles
-
-**Available Agent Personas:**
-- `@agent:architect` - Senior System Architect (project structure, consistency)
-- `@agent:backend` - Senior Node.js IoT Engineer (parsing, DB optimization)
-- `@agent:frontend` - Senior React Developer (dashboards, state management)
-- `@agent:qa` - Quality Assurance Engineer (edge cases, security)
-
-**Key Spec Files:**
-- `openspec/specs/01-architecture.md` - Master blueprint
-- `openspec/specs/02-v5008-parser.md` - V5008 binary parser spec
-- `openspec/specs/03-V6800-parser.md` - V6800 JSON parser spec
-- `openspec/specs/04-normalizer.md` - Normalization logic
-
-**Skip OpenSpec for:**
-- Simple bug fixes with clear intent
-- Adding logging or documentation
-- Refactoring internal implementation (no API/schema changes)
-
----
-
-## 11. Quick Reference
+## 10. Quick Reference
 
 ### Supported Message Types
 | Type | V5008 | V6800 | Description |
@@ -376,13 +390,27 @@ module.exports = {
 
 ### Configuration File Locations
 - Backend config: `config/default.json`
-- Frontend env: `dashboard/.env` (copy from `.env.example`)
+- Frontend env: `dashboard/.env.local` (copy from `.env.example`)
 
 ### Port Allocations
-- API Server: 3000
-- WebSocket Server: 3001
-- MQTT Broker: 1883 (configurable)
-- Dashboard Dev: 5173 (Vite default)
+| Service | Port | Config Path |
+|---------|------|-------------|
+| API Server | 3000 | `modules.apiServer.port` |
+| WebSocket Server | 3001 | `modules.webSocketServer.port` |
+| MQTT Broker | 1883 | `mqtt.brokerUrl` |
+| Dashboard Dev | 5173 | Vite default |
+
+### Environment Variables (Dashboard)
+```bash
+# Copy and configure
+cp dashboard/.env.example dashboard/.env.local
+
+# Key variables
+VITE_API_URL=http://localhost:3000
+VITE_WS_URL=ws://localhost:3001
+VITE_APP_TITLE=IoT Ops Dashboard
+VITE_APP_VERSION=1.2.0
+```
 
 <!-- OPENSPEC:START - Maintain this block for automated spec sync -->
 <!-- OPENSPEC:END -->
