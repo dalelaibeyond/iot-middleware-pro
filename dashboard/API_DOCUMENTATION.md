@@ -1,96 +1,181 @@
-# IoT Ops Dashboard API Documentation
+# Dashboard API Documentation
 
-## Overview
+## API & Integration Specification v1.2
 
-This document describes the API integration between the IoT Ops Dashboard and the IoT Middleware. The dashboard connects to the middleware via REST API for initial data fetching and WebSocket for real-time updates.
+This document describes the REST API endpoints used by the IoT Middleware Dashboard.
 
-## API Endpoints
+---
 
-### 1. Get Devices
+## Base URL
 
-**Endpoint**: `GET /api/devices`
+```
+http://localhost:3000/api
+```
 
-**Description**: Fetches the list of all devices with their metadata and active modules.
+---
 
-**Response**:
+## API Groups
 
+The API is organized into logical groups based on their purpose and data source:
+
+| Group | Endpoint Prefix | Description |
+|-------|-----------------|-------------|
+| **S** | `/api/*` | System API - Health and configuration |
+| **A** | `/api/live/*` | Management API - Live state from cache |
+| **E** | `/api/history/*` | History API - Historical data from database |
+
+---
+
+## Group S: System API
+
+### GET `/api/health`
+
+**Purpose:** Health check endpoint for monitoring system status.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "uptime": 12345.67,
+  "memory": {
+    "rss": "45.2 MB",
+    "heapUsed": "32.1 MB",
+    "heapTotal": "128.0 MB"
+  },
+  "db": "connected",
+  "mqtt": "connected"
+}
+```
+
+---
+
+### GET `/api/config`
+
+**Purpose:** Get system configuration (read-only view, secrets redacted).
+
+**Response:**
+```json
+{
+  "app": {
+    "name": "IoT Middleware Pro",
+    "version": "2.0.0"
+  },
+  "mqtt": {
+    "brokerUrl": "mqtt://localhost:1883",
+    "topics": {
+      "v5008": "V5008Upload/#",
+      "v6800": "V6800Upload/#"
+    }
+  },
+  "modules": {
+    "apiServer": {
+      "enabled": true,
+      "port": 3000,
+      "features": {
+        "management": true,
+        "history": true
+      }
+    }
+  }
+}
+```
+
+---
+
+## Group A: Management API (Hot Path)
+
+### GET `/api/live/topology`
+
+**Purpose:** List all active devices and their modules with live online status.
+This endpoint merges data from the database (if enabled) with the live state cache.
+
+**Response:**
 ```json
 [
   {
-    "deviceId": "DC01-RACK-08",
-    "deviceType": "V6800-IoT",
-    "ip": "192.168.1.108",
-    "fwVer": "v2.4.1-stable",
+    "deviceId": "2437871205",
+    "deviceType": "V5008",
+    "ip": "192.168.100.211",
+    "mac": "80:82:91:4E:F6:65",
+    "fwVer": "2503200910",
+    "mask": "255.255.0.0",
+    "gwIp": "192.168.0.1",
     "isOnline": true,
-    "activeModules": [
+    "lastSeenInfo": "2026-02-03T06:24:09.841Z",
+    "modules": [
       {
-        "moduleIndex": 0,
-        "moduleId": "R08-A",
-        "uTotal": 42
-      },
-      {
-        "moduleIndex": 1,
-        "moduleId": "R08-B",
-        "uTotal": 42
+        "moduleIndex": 2,
+        "moduleId": "2349402517",
+        "uTotal": 12,
+        "fwVer": "35203",
+        "isOnline": true,
+        "lastSeenHb": "2026-02-03T06:24:09.841Z"
       }
     ]
   }
 ]
 ```
 
-### 2. Get Rack State
+**Notes:**
+- Devices not found in the live cache but present in the database will have `isOnline: false`
+- Modules are sorted by `moduleIndex`
 
-**Endpoint**: `GET /api/devices/{deviceId}/modules/{moduleIndex}/state`
+---
 
-**Description**: Fetches the current state of a specific rack (device module).
+### GET `/api/live/devices/{deviceId}/modules/{moduleIndex}`
 
-**Parameters**:
+**Purpose:** Get full snapshot (UOS) of a specific rack/module.
 
-- `deviceId` (string): The ID of the device
-- `moduleIndex` (number): The index of the module/rack
+**Parameters:**
+- `deviceId` (path): Device ID
+- `moduleIndex` (path): Module index (0-5 for V5008, 1-5 for V6800)
 
-**Response**:
-
+**Response:**
 ```json
 {
-  "deviceId": "DC01-RACK-08",
-  "moduleIndex": 0,
+  "deviceId": "2437871205",
+  "deviceType": "V5008",
+  "moduleIndex": 2,
+  "moduleId": "2349402517",
   "isOnline": true,
-  "lastSeen_hb": "2023-01-01T12:00:00.000Z",
-  "rfid_snapshot": [
+  "lastSeenHb": "2026-02-03T06:24:09.841Z",
+  "rfidSnapshot": [
     {
-      "sensorIndex": 0,
-      "tagId": "TAG-12345",
+      "sensorIndex": 1,
+      "tagId": "AABBCCDD",
       "isAlarm": false
     }
   ],
-  "temp_hum": [
+  "tempHum": [
     {
-      "sensorIndex": 0,
+      "sensorIndex": 1,
       "temp": 24.5,
-      "hum": 50
+      "hum": 50.0
     }
   ],
-  "noise_level": [
+  "noiseLevel": [
     {
-      "sensorIndex": 0,
-      "noise": 45
+      "sensorIndex": 1,
+      "noise": 45.2
     }
   ],
-  "doorState": null,
-  "door1State": 0,
-  "door2State": 0
+  "doorState": 0,
+  "door1State": null,
+  "door2State": null,
+  "lastSeenRfid": "2026-02-03T06:24:09.841Z",
+  "lastSeenTh": "2026-02-03T06:24:09.841Z",
+  "lastSeenNs": "2026-02-03T06:24:09.841Z",
+  "lastSeenDoor": "2026-02-03T06:24:09.841Z"
 }
 ```
 
-### 3. Send Command
+---
 
-**Endpoint**: `POST /api/commands`
+### POST `/api/commands`
 
-**Description**: Sends a control command to a specific device.
+**Purpose:** Send a control command to a specific device.
 
-**Request Body**:
-
+**Request Body:**
 ```json
 {
   "deviceId": "2437871205",
@@ -104,247 +189,110 @@ This document describes the API integration between the IoT Ops Dashboard and th
 }
 ```
 
-**Response**:
-
+**Response:**
 ```json
 {
   "status": "sent",
-  "commandId": "cmd-12345"
+  "commandId": "cmd_1234567890_abc123"
 }
 ```
 
-### 4. Health Check
+**Status Codes:**
+- **202 Accepted:** Command validated and queued
+- **400 Bad Request:** Missing required fields
 
-**Endpoint**: `GET /api/health`
+---
 
-**Description**: Checks the health status of the middleware.
+## Group E: History API (Cold Path)
 
-**Response**:
+**Note:** These endpoints are only available when the storage module is enabled. If disabled, they return `501 Not Implemented`.
 
+### GET `/api/history/events`
+
+**Purpose:** List RFID/Door events from the database.
+
+**Query Parameters:**
+- `deviceId` (optional): Filter by device ID
+- `moduleIndex` (optional): Filter by module index
+- `eventType` (optional): Filter by type (`rfid` or `door`)
+- `limit` (optional): Max records (default: 100)
+- `offset` (optional): Pagination offset (default: 0)
+
+**Response:** Array of event objects with `eventType` field indicating the source table.
+
+---
+
+### GET `/api/history/telemetry`
+
+**Purpose:** List environmental telemetry data (temp/humidity/noise) from the database.
+
+**Query Parameters:**
+- `deviceId` (optional): Filter by device ID
+- `moduleIndex` (optional): Filter by module index
+- `type` (optional): Filter by type (`temp_hum` or `noise`)
+- `startTime` (optional): Start of time range (ISO 8601)
+- `endTime` (optional): End of time range (ISO 8601)
+- `limit` (optional): Max records (default: 100)
+
+**Response:** Array of telemetry records with `telemetryType` field indicating the source table.
+
+---
+
+### GET `/api/history/audit`
+
+**Purpose:** List configuration change events (topology changes).
+
+**Query Parameters:**
+- `deviceId` (optional): Filter by device ID
+- `limit` (optional): Max records (default: 100)
+- `offset` (optional): Pagination offset (default: 0)
+
+**Response:** Array of topology change events from `iot_topchange_event`.
+
+---
+
+### GET `/api/history/devices`
+
+**Purpose:** List devices from the database (historical view).
+
+**Query Parameters:**
+- `limit` (optional): Max records (default: 100)
+- `offset` (optional): Pagination offset (default: 0)
+
+**Response:** Array of device metadata from `iot_meta_data`.
+
+---
+
+## Deprecated Endpoints
+
+The following endpoints are deprecated and will be removed in a future version:
+
+| Deprecated Endpoint | Replacement |
+|---------------------|-------------|
+| `GET /api/devices` | `GET /api/live/topology` |
+| `GET /api/devices/:id/modules/:idx/state` | `GET /api/live/devices/:id/modules/:idx` |
+| `GET /api/devices/:id/modules` | `GET /api/live/topology` |
+| `GET /api/uos/:id/:idx` | `GET /api/live/devices/:id/modules/:idx` |
+| `GET /api/meta/:id` | `GET /api/live/topology` |
+
+---
+
+## Error Responses
+
+All endpoints follow standard HTTP status codes:
+
+| Status | Description |
+|--------|-------------|
+| 200 OK | Successful GET request |
+| 202 Accepted | Command queued successfully |
+| 400 Bad Request | Invalid request parameters |
+| 404 Not Found | Resource not found |
+| 501 Not Implemented | History API when storage disabled |
+| 500 Internal Server Error | Server error |
+
+**Error Response Format:**
 ```json
 {
-  "status": "ok",
-  "services": {
-    "database": "connected",
-    "mqtt": "connected",
-    "websocket": "running"
-  }
+  "error": "Error description"
 }
 ```
-
-## WebSocket Connection
-
-### Connection URL
-
-**Default**: `ws://localhost:3001`
-**Configurable via**: `VITE_WS_URL` environment variable
-
-### Message Format
-
-All WebSocket messages follow the SUO (Standard Unified Object) format:
-
-```json
-{
-  "messageType": "MESSAGE_TYPE",
-  "deviceId": "DEVICE_ID",
-  "moduleIndex": 0,
-  "payload": { ... }
-}
-```
-
-### Message Types
-
-#### 1. DEVICE_METADATA
-
-Updates device metadata information.
-
-```json
-{
-  "messageType": "DEVICE_METADATA",
-  "deviceId": "DC01-RACK-08",
-  "payload": {
-    "ip": "192.168.1.108",
-    "fwVer": "v2.4.2-stable",
-    "isOnline": true
-  }
-}
-```
-
-#### 2. HEARTBEAT
-
-Indicates the device is still online.
-
-```json
-{
-  "messageType": "HEARTBEAT",
-  "deviceId": "DC01-RACK-08",
-  "payload": {}
-}
-```
-
-#### 3. TEMP_HUM
-
-Updates temperature and humidity readings.
-
-```json
-{
-  "messageType": "TEMP_HUM",
-  "deviceId": "DC01-RACK-08",
-  "moduleIndex": 0,
-  "payload": {
-    "sensorIndex": 0,
-    "temp": 24.5,
-    "hum": 50
-  }
-}
-```
-
-#### 4. RFID_SNAPSHOT
-
-Updates RFID tag information.
-
-```json
-{
-  "messageType": "RFID_SNAPSHOT",
-  "deviceId": "DC01-RACK-08",
-  "moduleIndex": 0,
-  "payload": [
-    {
-      "sensorIndex": 0,
-      "tagId": "TAG-12345",
-      "isAlarm": false
-    }
-  ]
-}
-```
-
-#### 5. DOOR_STATE
-
-Updates door status.
-
-```json
-{
-  "messageType": "DOOR_STATE",
-  "deviceId": "DC01-RACK-08",
-  "moduleIndex": 0,
-  "payload": {
-    "door1State": 0,
-    "door2State": 0
-  }
-}
-```
-
-#### 6. NOISE
-
-Updates noise level readings.
-
-```json
-{
-  "messageType": "NOISE",
-  "deviceId": "DC01-RACK-08",
-  "moduleIndex": 0,
-  "payload": {
-    "sensorIndex": 0,
-    "noise": 45
-  }
-}
-```
-
-#### 7. META_CHANGED_EVENT
-
-Notification that metadata has changed.
-
-```json
-{
-  "messageType": "META_CHANGED_EVENT",
-  "deviceId": "DC01-RACK-08",
-  "payload": {
-    "message": "Device configuration updated"
-  }
-}
-```
-
-## Error Handling
-
-### HTTP Status Codes
-
-- `200 OK`: Successful request
-- `202 Accepted`: Command accepted for processing
-- `400 Bad Request`: Invalid request parameters
-- `401 Unauthorized`: Authentication required
-- `403 Forbidden`: Insufficient permissions
-- `404 Not Found`: Resource not found
-- `500 Internal Server Error`: Server error
-
-### WebSocket Error Handling
-
-The dashboard implements automatic reconnection with exponential backoff:
-
-- Initial reconnection attempt: 2 seconds
-- Subsequent attempts: 4, 8, 16, 32 seconds
-- Maximum attempts: 5
-
-## Data Validation
-
-All API responses and WebSocket messages are validated against TypeScript interfaces to ensure data integrity:
-
-- `DeviceMetadata`: Validates device list responses
-- `RackState`: Validates rack state responses
-- `SUOUpdate`: Validates WebSocket messages
-
-Invalid data is logged to the console and rejected to prevent UI errors.
-
-## Environment Configuration
-
-### Required Environment Variables
-
-- `VITE_API_URL`: Base URL for API requests (default: `http://localhost:3000`)
-- `VITE_WS_URL`: WebSocket connection URL (default: `ws://localhost:3001`)
-
-### Optional Environment Variables
-
-- `VITE_APP_TITLE`: Application title (default: `IoT Ops Dashboard`)
-- `VITE_APP_VERSION`: Application version (default: `1.2.0`)
-
-## Development Setup
-
-1. Copy `.env.example` to `.env.local`
-2. Configure the environment variables for your middleware instance
-3. Run `npm run dev` to start the development server
-4. The dashboard will connect to the middleware using the configured URLs
-
-## Production Deployment
-
-1. Set the appropriate environment variables for your production environment
-2. Run `npm run build` to create the production build
-3. Deploy the `dist` folder to your web server
-4. Configure your web server to serve the application and proxy API requests if needed
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Connection Refused**
-   - Check if the middleware is running
-   - Verify the API and WebSocket URLs in your environment configuration
-
-2. **CORS Errors**
-   - Ensure the middleware allows requests from your dashboard domain
-   - Check the CORS configuration on the middleware
-
-3. **Data Not Updating**
-   - Verify WebSocket connection is established
-   - Check browser console for WebSocket errors
-   - Ensure the middleware is emitting data updates
-
-4. **Authentication Errors**
-   - Check if authentication is required by the middleware
-   - Verify authentication tokens are being sent with requests
-
-### Debug Mode
-
-Enable debug mode by setting `localStorage.debug = 'true'` in the browser console. This will:
-
-- Log all API requests and responses
-- Log all WebSocket messages
-- Show detailed error information

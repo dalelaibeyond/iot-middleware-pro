@@ -3,13 +3,17 @@
  *
  * Provides REST API endpoints for dashboard integration and device control.
  * Serves read-only state from StateCache and handles control commands.
+ *
+ * API Groups:
+ * - Group S: System API (always available)
+ * - Group A: Management API (hot path from cache)
+ * - Group E: History API (cold path from DB, conditional)
  */
 
 const express = require("express");
 const eventBus = require("../../core/EventBus");
 const StateCache = require("../normalizer/StateCache");
 const database = require("../../core/Database");
-const CommandService = require("../command/CommandService");
 
 class ApiServer {
   constructor() {
@@ -65,6 +69,45 @@ class ApiServer {
    * Setup API routes
    */
   setupRoutes() {
+    // =========================================================================
+    // Group S: System API (Always Load)
+    // =========================================================================
+    this.setupSystemRoutes();
+
+    // =========================================================================
+    // Group A: Management API (Conditional)
+    // =========================================================================
+    const managementEnabled = this.config.features?.management !== false;
+    if (managementEnabled) {
+      this.setupManagementRoutes();
+    }
+
+    // =========================================================================
+    // Group E: History API (Conditional - requires storage)
+    // =========================================================================
+    const globalConfig = require("config");
+    const storageEnabled = globalConfig.get("modules.storage.enabled");
+    const historyRequested = this.config.features?.history !== false;
+
+    if (historyRequested && storageEnabled) {
+      this.setupHistoryRoutes();
+    } else if (historyRequested && !storageEnabled) {
+      // 501 Handler for when history is requested but storage is disabled
+      this.app.use("/api/history", (req, res) =>
+        res.status(501).json({ error: "Storage module disabled" }),
+      );
+    }
+
+    // =========================================================================
+    // Error Handlers
+    // =========================================================================
+    this.setupErrorHandlers();
+  }
+
+  /**
+   * Group S: System Routes
+   */
+  setupSystemRoutes() {
     // Health check endpoint
     this.app.get("/api/health", (req, res) => {
       const db = database.getConnection();
@@ -98,101 +141,140 @@ class ApiServer {
 
       res.json(appConfig);
     });
+  }
 
-    // Device list endpoint (sidebar)
-    this.app.get("/api/devices", async (req, res) => {
+  /**
+   * Group A: Management Routes (Hot Path from Cache)
+   */
+  setupManagementRoutes() {
+    // GET /api/live/topology - List all active Devices & Modules
+    this.app.get("/api/live/topology", async (req, res) => {
       try {
-        const devices = await database.select("iot_meta_data");
-        res.json(devices);
-      } catch (error) {
-        console.error("Error fetching devices:", error.message);
-        res.status(500).json({ error: "Failed to fetch devices" });
-      }
-    });
+        // 1. Query DB for known devices (if storage enabled)
+        const globalConfig = require("config");
+        const storageEnabled = globalConfig.get("modules.storage.enabled");
+        let dbDevices = [];
 
-    // Module state endpoint (detail view)
-    this.app.get(
-      "/api/devices/:deviceId/modules/:moduleIndex/state",
-      (req, res) => {
-        try {
-          const { deviceId, moduleIndex } = req.params;
-          const state = StateCache.getTelemetry(
-            deviceId,
-            parseInt(moduleIndex),
-          );
+        if (storageEnabled) {
+          try {
+            dbDevices = await database.select("iot_meta_data");
+          } catch (dbError) {
+            console.error("[ApiServer] Error fetching devices from DB:", dbError.message);
+          }
+        }
 
-          if (!state) {
-            return res.status(404).json({ error: "Module state not found" });
+        // 2. Query Cache for live status
+        const cacheDevices = [];
+        const processedDeviceIds = new Set();
+
+        // Get all device metadata from cache
+        const allMetadata = StateCache.getAllMetadata();
+        const allTelemetry = StateCache.getAllTelemetry();
+
+        for (const metadata of allMetadata) {
+          const deviceId = metadata.deviceId;
+          processedDeviceIds.add(deviceId);
+
+          // Get all modules for this device from cache
+          const modules = [];
+          for (const telem of allTelemetry) {
+            if (telem.key.startsWith(`device:${deviceId}:module:`)) {
+              modules.push({
+                moduleIndex: telem.moduleIndex,
+                moduleId: telem.moduleId,
+                uTotal: telem.uTotal,
+                fwVer: telem.fwVer,
+                isOnline: telem.isOnline,
+                lastSeenHb: telem.lastSeen_hb,
+              });
+            }
           }
 
-          // Include deviceId and moduleIndex in response for dashboard validation
-          res.json({
-            ...state,
-            deviceId,
-            moduleIndex: parseInt(moduleIndex),
-          });
-        } catch (error) {
-          console.error("Error fetching module state:", error.message);
-          res.status(500).json({ error: "Failed to fetch module state" });
-        }
-      },
-    );
+          // Also include modules from metadata that might not have telemetry yet
+          if (metadata.activeModules) {
+            metadata.activeModules.forEach((mod) => {
+              const existingMod = modules.find(
+                (m) => m.moduleIndex === mod.moduleIndex
+              );
+              if (!existingMod) {
+                modules.push({
+                  moduleIndex: mod.moduleIndex,
+                  moduleId: mod.moduleId,
+                  uTotal: mod.uTotal,
+                  fwVer: mod.fwVer,
+                  isOnline: false,
+                  lastSeenHb: null,
+                });
+              }
+            });
+          }
 
-    // All modules for a device
-    this.app.get("/api/devices/:deviceId/modules", (req, res) => {
-      try {
-        const { deviceId } = req.params;
-        const modules = StateCache.getAllModules(deviceId);
-        res.json(modules);
+          cacheDevices.push({
+            deviceId: metadata.deviceId,
+            deviceType: metadata.deviceType,
+            ip: metadata.ip,
+            mac: metadata.mac,
+            fwVer: metadata.fwVer,
+            mask: metadata.mask,
+            gwIp: metadata.gwIp,
+            isOnline: true,
+            lastSeenInfo: metadata.lastSeen_info,
+            modules: modules.sort((a, b) => a.moduleIndex - b.moduleIndex),
+          });
+        }
+
+        // 3. Merge: Add DB devices not in cache (mark as offline)
+        for (const dbDevice of dbDevices) {
+          if (!processedDeviceIds.has(dbDevice.device_id)) {
+            cacheDevices.push({
+              deviceId: dbDevice.device_id,
+              deviceType: dbDevice.device_type,
+              ip: dbDevice.device_ip,
+              mac: dbDevice.device_mac,
+              fwVer: dbDevice.device_fwVer,
+              mask: dbDevice.device_mask,
+              gwIp: dbDevice.device_gwIp,
+              isOnline: false,
+              lastSeenInfo: dbDevice.last_seen_info,
+              modules: dbDevice.modules || [],
+            });
+          }
+        }
+
+        // 4. Return full list
+        res.json(cacheDevices);
       } catch (error) {
-        console.error("Error fetching modules:", error.message);
-        res.status(500).json({ error: "Failed to fetch modules" });
+        console.error("[ApiServer] Error fetching topology:", error.message);
+        res.status(500).json({ error: "Failed to fetch topology" });
       }
     });
 
-    // UOS endpoint - Get telemetry for a specific module
-    this.app.get("/api/uos/:deviceId/:moduleIndex", (req, res) => {
+    // GET /api/live/devices/:id/modules/:idx - Get Full Snapshot (UOS)
+    this.app.get("/api/live/devices/:deviceId/modules/:moduleIndex", (req, res) => {
       try {
         const { deviceId, moduleIndex } = req.params;
-        const telemetry = StateCache.getTelemetry(
+        const state = StateCache.getTelemetry(
           deviceId,
           parseInt(moduleIndex),
         );
 
-        if (!telemetry) {
-          return res.status(404).json({ error: "Module telemetry not found" });
+        if (!state) {
+          return res.status(404).json({ error: "Module state not found" });
         }
 
         // Include deviceId and moduleIndex in response for dashboard validation
         res.json({
-          ...telemetry,
+          ...state,
           deviceId,
           moduleIndex: parseInt(moduleIndex),
         });
       } catch (error) {
-        console.error("Error fetching UOS telemetry:", error.message);
-        res.status(500).json({ error: "Failed to fetch UOS telemetry" });
+        console.error("[ApiServer] Error fetching module state:", error.message);
+        res.status(500).json({ error: "Failed to fetch module state" });
       }
     });
 
-    // META endpoint - Get device metadata
-    this.app.get("/api/meta/:deviceId", (req, res) => {
-      try {
-        const { deviceId } = req.params;
-        const metadata = StateCache.getMetadata(deviceId);
-
-        if (!metadata) {
-          return res.status(404).json({ error: "Device metadata not found" });
-        }
-
-        res.json(metadata);
-      } catch (error) {
-        console.error("Error fetching META metadata:", error.message);
-        res.status(500).json({ error: "Failed to fetch META metadata" });
-      }
-    });
-
-    // Control commands endpoint
+    // POST /api/commands - Send Control Command
     this.app.post("/api/commands", async (req, res) => {
       try {
         const { deviceId, deviceType, messageType, payload } = req.body;
@@ -226,11 +308,155 @@ class ApiServer {
           commandId,
         });
       } catch (error) {
-        console.error("Error sending command:", error.message);
+        console.error("[ApiServer] Error sending command:", error.message);
         res.status(500).json({ error: "Failed to send command" });
       }
     });
+  }
 
+  /**
+   * Group E: History Routes (Cold Path from DB)
+   */
+  setupHistoryRoutes() {
+    // GET /api/history/events - List RFID/Door events
+    this.app.get("/api/history/events", async (req, res) => {
+      try {
+        const { deviceId, moduleIndex, eventType, limit = 100, offset = 0 } = req.query;
+        const db = database.getConnection();
+
+        let results = [];
+
+        if (!eventType || eventType === "rfid") {
+          const rfidQuery = db("iot_rfid_event")
+            .select("*")
+            .orderBy("parse_at", "desc")
+            .limit(parseInt(limit))
+            .offset(parseInt(offset));
+
+          if (deviceId) rfidQuery.where("device_id", deviceId);
+          if (moduleIndex) rfidQuery.where("module_index", parseInt(moduleIndex));
+
+          const rfidEvents = await rfidQuery;
+          results.push(...rfidEvents.map(e => ({ ...e, eventType: "rfid" })));
+        }
+
+        if (!eventType || eventType === "door") {
+          const doorQuery = db("iot_door_event")
+            .select("*")
+            .orderBy("parse_at", "desc")
+            .limit(parseInt(limit))
+            .offset(parseInt(offset));
+
+          if (deviceId) doorQuery.where("device_id", deviceId);
+          if (moduleIndex) doorQuery.where("module_index", parseInt(moduleIndex));
+
+          const doorEvents = await doorQuery;
+          results.push(...doorEvents.map(e => ({ ...e, eventType: "door" })));
+        }
+
+        // Sort by timestamp desc
+        results.sort((a, b) => new Date(b.parse_at) - new Date(a.parse_at));
+
+        res.json(results.slice(0, parseInt(limit)));
+      } catch (error) {
+        console.error("[ApiServer] Error fetching events:", error.message);
+        res.status(500).json({ error: "Failed to fetch events" });
+      }
+    });
+
+    // GET /api/history/telemetry - List Env Data
+    this.app.get("/api/history/telemetry", async (req, res) => {
+      try {
+        const { deviceId, moduleIndex, type, startTime, endTime, limit = 100 } = req.query;
+        const db = database.getConnection();
+
+        let results = [];
+
+        if (!type || type === "temp_hum") {
+          const thQuery = db("iot_temp_hum")
+            .select("*")
+            .orderBy("parse_at", "desc")
+            .limit(parseInt(limit));
+
+          if (deviceId) thQuery.where("device_id", deviceId);
+          if (moduleIndex) thQuery.where("module_index", parseInt(moduleIndex));
+          if (startTime) thQuery.where("parse_at", ">=", new Date(startTime));
+          if (endTime) thQuery.where("parse_at", "<=", new Date(endTime));
+
+          const thData = await thQuery;
+          results.push(...thData.map(d => ({ ...d, telemetryType: "temp_hum" })));
+        }
+
+        if (!type || type === "noise") {
+          const noiseQuery = db("iot_noise_level")
+            .select("*")
+            .orderBy("parse_at", "desc")
+            .limit(parseInt(limit));
+
+          if (deviceId) noiseQuery.where("device_id", deviceId);
+          if (moduleIndex) noiseQuery.where("module_index", parseInt(moduleIndex));
+          if (startTime) noiseQuery.where("parse_at", ">=", new Date(startTime));
+          if (endTime) noiseQuery.where("parse_at", "<=", new Date(endTime));
+
+          const noiseData = await noiseQuery;
+          results.push(...noiseData.map(d => ({ ...d, telemetryType: "noise" })));
+        }
+
+        // Sort by timestamp desc
+        results.sort((a, b) => new Date(b.parse_at) - new Date(a.parse_at));
+
+        res.json(results.slice(0, parseInt(limit)));
+      } catch (error) {
+        console.error("[ApiServer] Error fetching telemetry:", error.message);
+        res.status(500).json({ error: "Failed to fetch telemetry" });
+      }
+    });
+
+    // GET /api/history/audit - List Config Changes
+    this.app.get("/api/history/audit", async (req, res) => {
+      try {
+        const { deviceId, limit = 100, offset = 0 } = req.query;
+        const db = database.getConnection();
+
+        const query = db("iot_topchange_event")
+          .select("*")
+          .orderBy("parse_at", "desc")
+          .limit(parseInt(limit))
+          .offset(parseInt(offset));
+
+        if (deviceId) query.where("device_id", deviceId);
+
+        const events = await query;
+        res.json(events);
+      } catch (error) {
+        console.error("[ApiServer] Error fetching audit events:", error.message);
+        res.status(500).json({ error: "Failed to fetch audit events" });
+      }
+    });
+
+    // GET /api/history/devices - List devices in the DB
+    this.app.get("/api/history/devices", async (req, res) => {
+      try {
+        const { limit = 100, offset = 0 } = req.query;
+        const db = database.getConnection();
+
+        const devices = await db("iot_meta_data")
+          .select("*")
+          .limit(parseInt(limit))
+          .offset(parseInt(offset));
+
+        res.json(devices);
+      } catch (error) {
+        console.error("[ApiServer] Error fetching devices:", error.message);
+        res.status(500).json({ error: "Failed to fetch devices" });
+      }
+    });
+  }
+
+  /**
+   * Error Handlers
+   */
+  setupErrorHandlers() {
     // 404 handler
     this.app.use((req, res) => {
       res.status(404).json({ error: "Not found" });
@@ -238,7 +464,7 @@ class ApiServer {
 
     // Error handler
     this.app.use((err, req, res, next) => {
-      console.error("API error:", err.message);
+      console.error("[ApiServer] API error:", err.message);
       res.status(500).json({ error: "Internal server error" });
     });
   }

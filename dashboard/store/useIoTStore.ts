@@ -48,16 +48,87 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
       suo.messageType === "DEVICE_METADATA" ||
       suo.messageType === "HEARTBEAT"
     ) {
-      const updatedList = deviceList.map((d) => {
-        if (d.deviceId === suo.deviceId) {
-          return {
-            ...d,
-            ...suo.payload,
-            isOnline: suo.messageType === "HEARTBEAT" ? true : d.isOnline,
-          };
-        }
-        return d;
-      });
+      const existingDeviceIndex = deviceList.findIndex(
+        (d) => d.deviceId === suo.deviceId
+      );
+
+      let updatedList;
+      if (existingDeviceIndex >= 0) {
+        // Update existing device
+        updatedList = deviceList.map((d) => {
+          if (d.deviceId === suo.deviceId) {
+            let updatedModules = d.activeModules;
+            
+            if (suo.messageType === "DEVICE_METADATA") {
+              // DEVICE_METADATA: payload is the complete activeModules array
+              if (Array.isArray(suo.payload)) {
+                updatedModules = suo.payload;
+              }
+            } else if (
+              suo.messageType === "HEARTBEAT" &&
+              suo.moduleIndex !== undefined
+            ) {
+              // HEARTBEAT: module info is at root level, payload may contain moduleId/uTotal
+              const hbModuleId = suo.payload?.moduleId;
+              const hbUTotal = suo.payload?.uTotal;
+              const moduleIdx = d.activeModules.findIndex(
+                (m) => m.moduleIndex === suo.moduleIndex
+              );
+              
+              if (moduleIdx >= 0) {
+                // Update existing module
+                updatedModules = d.activeModules.map((m) =>
+                  m.moduleIndex === suo.moduleIndex
+                    ? {
+                        ...m,
+                        ...(hbModuleId && { moduleId: String(hbModuleId) }),
+                        ...(hbUTotal !== undefined && { uTotal: Number(hbUTotal) }),
+                      }
+                    : m
+                );
+              } else {
+                // Add new module from HEARTBEAT
+                updatedModules = [
+                  ...d.activeModules,
+                  {
+                    moduleIndex: suo.moduleIndex,
+                    moduleId: hbModuleId ? String(hbModuleId) : "",
+                    fwVer: null,
+                    uTotal: hbUTotal !== undefined ? Number(hbUTotal) : 0,
+                  },
+                ];
+              }
+            }
+
+            return {
+              ...d,
+              deviceType: suo.deviceType || d.deviceType,
+              ip: suo.ip !== undefined ? suo.ip : d.ip,
+              mac: suo.mac !== undefined ? suo.mac : d.mac,
+              fwVer: suo.fwVer !== undefined ? suo.fwVer : d.fwVer,
+              mask: suo.mask !== undefined ? suo.mask : d.mask,
+              gwIp: suo.gwIp !== undefined ? suo.gwIp : d.gwIp,
+              activeModules: updatedModules,
+              isOnline: suo.messageType === "HEARTBEAT" ? true : d.isOnline,
+            };
+          }
+          return d;
+        });
+      } else {
+        // Add new device to the list
+        const newDevice: DeviceMetadata = {
+          deviceId: String(suo.deviceId),
+          deviceType: suo.deviceType || "V5008",
+          ip: suo.ip || null,
+          mac: suo.mac || null,
+          fwVer: suo.fwVer || null,
+          mask: suo.mask || null,
+          gwIp: suo.gwIp || null,
+          isOnline: suo.messageType === "HEARTBEAT",
+          activeModules: Array.isArray(suo.payload) ? suo.payload : [],
+        };
+        updatedList = [...deviceList, newDevice];
+      }
       set({ deviceList: updatedList });
     }
 
@@ -76,8 +147,9 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
     }
 
     // If no activeRack exists, create a minimal one for this device/module
+    let newRack;
     if (!activeRack) {
-      activeRack = {
+      newRack = {
         deviceId: suoDeviceId,
         moduleIndex: suoModuleIndex || 0,
         isOnline: true,
@@ -91,9 +163,9 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
         door1State: null,
         door2State: null,
       };
+    } else {
+      newRack = { ...activeRack };
     }
-
-    let newRack = { ...activeRack };
 
     switch (suo.messageType) {
       case "TEMP_HUM":

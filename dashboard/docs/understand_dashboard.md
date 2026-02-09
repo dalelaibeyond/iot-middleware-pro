@@ -522,7 +522,7 @@ While WebSocket handles real-time updates, REST API is used for:
 useEffect(() => {
   const init = async () => {
     try {
-      const devices = await getDevices();  // GET /api/devices
+      const devices = await getTopology();  // GET /api/live/topology
       setDeviceList(devices);
       if (devices.length > 0) {
         setActiveSelection(
@@ -558,10 +558,16 @@ useEffect(() => {
 
 | Endpoint | Method | Purpose |
 |----------|---------|---------|
-| `/api/devices` | GET | Fetch all devices with metadata |
-| `/api/devices/{id}/modules/{index}/state` | GET | Fetch specific rack state |
+| `/api/live/topology` | GET | Fetch all devices with live status |
+| `/api/live/devices/{id}/modules/{index}` | GET | Fetch specific rack state |
 | `/api/commands` | POST | Send command to device |
 | `/api/health` | GET | Check middleware health |
+| `/api/history/events` | GET | Fetch RFID/Door events |
+| `/api/history/telemetry` | GET | Fetch env telemetry history |
+| `/api/history/audit` | GET | Fetch config change audit |
+| `/api/history/devices` | GET | Fetch devices from DB |
+
+**Note:** History endpoints (`/api/history/*`) require the storage module to be enabled.
 
 ---
 

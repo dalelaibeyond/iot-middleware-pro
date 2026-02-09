@@ -95,10 +95,11 @@ The dashboard is built with:
 The dashboard integrates with the IoT Middleware through:
 
 - **REST API**:
-  - `GET /api/devices` - Fetch device list
-  - `GET /api/devices/{id}/modules/{index}/state` - Fetch rack state
+  - `GET /api/live/topology` - Fetch device list with live status
+  - `GET /api/live/devices/{id}/modules/{index}` - Fetch rack state
   - `POST /api/commands` - Send commands to devices
   - `GET /api/health` - Check middleware health
+  - `GET /api/history/*` - Historical data (requires storage module)
 
 - **WebSocket**:
   - Real-time updates for device state changes

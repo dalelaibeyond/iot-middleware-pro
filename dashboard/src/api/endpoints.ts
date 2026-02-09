@@ -7,6 +7,7 @@ import {
 
 /**
  * API endpoint functions for interacting with the IoT Middleware
+ * Updated for API Spec v1.2 (10-api_spec.md)
  */
 
 /**
@@ -59,12 +60,17 @@ function toCamelCase<T>(obj: any): T {
   return result;
 }
 
+// ============================================================================
+// Group A: Management API (Hot Path)
+// ============================================================================
+
 /**
- * Fetches the list of all devices with their metadata
- * @returns Promise<DeviceMetadata[]> - Array of device metadata
+ * Fetches the topology of all devices and their modules
+ * NEW in API v1.2: Replaces getDevices()
+ * @returns Promise<DeviceMetadata[]> - Array of device metadata with online status
  */
-export const getDevices = async (): Promise<DeviceMetadata[]> => {
-  const response = await apiClient.get<any[]>("/api/devices");
+export const getTopology = async (): Promise<DeviceMetadata[]> => {
+  const response = await apiClient.get<any[]>("/api/live/topology");
   // Transform snake_case to camelCase
   const camelCaseData = toCamelCase<any[]>(response.data);
   return validateDeviceListResponse(camelCaseData);
@@ -72,6 +78,7 @@ export const getDevices = async (): Promise<DeviceMetadata[]> => {
 
 /**
  * Fetches the state of a specific rack (device module)
+ * NEW in API v1.2: Updated endpoint path
  * @param deviceId - The ID of the device
  * @param moduleIndex - The index of the module/rack
  * @returns Promise<RackState> - The current state of the rack
@@ -81,7 +88,7 @@ export const getRackState = async (
   moduleIndex: number,
 ): Promise<RackState> => {
   const response = await apiClient.get<any>(
-    `/api/devices/${deviceId}/modules/${moduleIndex}/state`,
+    `/api/live/devices/${deviceId}/modules/${moduleIndex}`,
   );
   // Transform snake_case to camelCase
   const camelCaseData = toCamelCase<any>(response.data);
@@ -143,6 +150,10 @@ export const sendCommand = async (
   return response.data;
 };
 
+// ============================================================================
+// Group S: System API
+// ============================================================================
+
 /**
  * Checks the health status of the middleware
  * @returns Promise<{ status: string; services: any }> - Health status
@@ -155,4 +166,89 @@ export const getHealthStatus = async (): Promise<{
     "/api/health",
   );
   return response.data;
+};
+
+// ============================================================================
+// Group E: History API (Cold Path)
+// ============================================================================
+
+/**
+ * Fetches historical events (RFID/Door) from the database
+ * @param params - Query parameters
+ * @returns Promise<any[]> - Array of historical events
+ */
+export const getHistoryEvents = async (params?: {
+  deviceId?: string;
+  moduleIndex?: number;
+  eventType?: "rfid" | "door";
+  limit?: number;
+  offset?: number;
+}): Promise<any[]> => {
+  const response = await apiClient.get<any[]>("/api/history/events", {
+    params,
+  });
+  return response.data;
+};
+
+/**
+ * Fetches historical telemetry data (Temp/Hum/Noise) from the database
+ * @param params - Query parameters
+ * @returns Promise<any[]> - Array of historical telemetry data
+ */
+export const getHistoryTelemetry = async (params?: {
+  deviceId?: string;
+  moduleIndex?: number;
+  type?: "temp_hum" | "noise";
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+}): Promise<any[]> => {
+  const response = await apiClient.get<any[]>("/api/history/telemetry", {
+    params,
+  });
+  return response.data;
+};
+
+/**
+ * Fetches audit log (config changes) from the database
+ * @param params - Query parameters
+ * @returns Promise<any[]> - Array of audit events
+ */
+export const getHistoryAudit = async (params?: {
+  deviceId?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<any[]> => {
+  const response = await apiClient.get<any[]>("/api/history/audit", {
+    params,
+  });
+  return response.data;
+};
+
+/**
+ * Fetches device list from database history
+ * @param params - Query parameters
+ * @returns Promise<any[]> - Array of devices from history
+ */
+export const getHistoryDevices = async (params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<any[]> => {
+  const response = await apiClient.get<any[]>("/api/history/devices", {
+    params,
+  });
+  return response.data;
+};
+
+// ============================================================================
+// Backward Compatibility (Deprecated)
+// ============================================================================
+
+/**
+ * @deprecated Use getTopology() instead
+ * Fetches the list of all devices with their metadata
+ */
+export const getDevices = async (): Promise<DeviceMetadata[]> => {
+  console.warn("[DEPRECATED] getDevices() is deprecated, use getTopology() instead");
+  return getTopology();
 };

@@ -6,7 +6,7 @@ import { RackStrip } from "./components/rack/RackStrip";
 import { EnvList } from "./components/rack/EnvList";
 import { useIoTStore } from "./store/useIoTStore";
 import { useSocket } from "./hooks/useSocket";
-import { getDevices, getRackState } from "./src/api/endpoints";
+import { getTopology, getRackState } from "./src/api/endpoints";
 import { FullPageLoader } from "./components/ui/LoadingIndicator";
 import {
   DeviceListSkeleton,
@@ -34,7 +34,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        const devices = await getDevices();
+        const devices = await getTopology();
         setDeviceList(devices);
         if (devices.length > 0) {
           setActiveSelection(

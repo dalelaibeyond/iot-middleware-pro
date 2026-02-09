@@ -43,20 +43,24 @@ export interface ModuleMetadata {
   moduleIndex: number;
   moduleId: string;
   uTotal: number;
+  fwVer?: string | null;
 }
 
 export interface DeviceMetadata {
   deviceId: string;
   deviceType: string;
   ip: string | null;
+  mac?: string | null;
   fwVer: string | null;
+  mask?: string | null;
+  gwIp?: string | null;
   isOnline: boolean;
   activeModules: ModuleMetadata[];
 }
 
 export type MessageType = 
-  | 'DEVICE_METADATA' 
-  | 'HEARTBEAT' 
+  | 'DEVICE_METADATA'    // Device metadata (ip, mac, fwVer, modules)
+  | 'HEARTBEAT'          // Heartbeat with module info
   | 'TEMP_HUM' 
   | 'QRY_TEMP_HUM_RESP'  // Query response for temp/hum
   | 'RFID_SNAPSHOT' 
@@ -69,6 +73,13 @@ export type MessageType =
 export interface SUOUpdate {
   messageType: MessageType;
   deviceId: string;
+  deviceType?: string;
   moduleIndex?: number;
+  // Device-level fields (for DEVICE_METADATA)
+  ip?: string | null;
+  mac?: string | null;
+  fwVer?: string | null;
+  mask?: string | null;
+  gwIp?: string | null;
   payload: any;
 }

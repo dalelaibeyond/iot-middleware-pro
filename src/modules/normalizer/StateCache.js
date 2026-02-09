@@ -354,6 +354,34 @@ class StateCache {
   }
 
   /**
+   * Get all device metadata entries (for topology API)
+   * @returns {Array} Array of all device metadata
+   */
+  getAllMetadata() {
+    const devices = [];
+    for (const [key, metadata] of this.metadataCache.entries()) {
+      if (key.startsWith("device:") && key.endsWith(":info")) {
+        devices.push(metadata);
+      }
+    }
+    return devices;
+  }
+
+  /**
+   * Get all telemetry entries (for topology API)
+   * @returns {Array} Array of all telemetry entries
+   */
+  getAllTelemetry() {
+    const telemetry = [];
+    for (const [key, data] of this.telemetryCache.entries()) {
+      if (key.startsWith("device:") && key.includes(":module:")) {
+        telemetry.push({ key, ...data });
+      }
+    }
+    return telemetry;
+  }
+
+  /**
    * Get heartbeat cache (for CacheWatchdog)
    * @returns {Map} Heartbeat cache
    */

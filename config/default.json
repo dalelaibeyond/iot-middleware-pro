@@ -71,7 +71,11 @@
     "apiServer": {
       "enabled": true,
       "port": 3000,
-      "host": "0.0.0.0"
+      "host": "0.0.0.0",
+      "features": {
+        "management": true,
+        "history": true
+      }
     },
     "webSocketServer": {
       "enabled": true,
