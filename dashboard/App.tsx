@@ -37,10 +37,12 @@ const App: React.FC = () => {
         const devices = await getTopology();
         setDeviceList(devices);
         if (devices.length > 0) {
-          setActiveSelection(
-            devices[0].deviceId,
-            devices[0].activeModules[0].moduleIndex,
-          );
+          // Handle "Zero Module" case - device may have no modules
+          const firstDevice = devices[0];
+          const firstModuleIndex = firstDevice.activeModules.length > 0 
+            ? firstDevice.activeModules[0].moduleIndex 
+            : 0;
+          setActiveSelection(firstDevice.deviceId, firstModuleIndex);
         }
       } catch (err) {
         console.error("Initialization failed", err);
@@ -50,6 +52,23 @@ const App: React.FC = () => {
     };
     init();
   }, [setDeviceList, setActiveSelection]);
+
+  // Auto-correct selection if active module was removed (e.g., "Zero Module" case)
+  useEffect(() => {
+    if (activeDeviceId && activeModuleIndex !== null) {
+      const activeDeviceMeta = deviceList.find((d) => d.deviceId === activeDeviceId);
+      if (activeDeviceMeta) {
+        const activeModuleExists = activeDeviceMeta.activeModules.some(
+          (m) => m.moduleIndex === activeModuleIndex
+        );
+        // If module no longer exists but device has other modules, select first available
+        if (!activeModuleExists && activeDeviceMeta.activeModules.length > 0) {
+          const firstModuleIndex = activeDeviceMeta.activeModules[0].moduleIndex;
+          setActiveSelection(activeDeviceId, firstModuleIndex);
+        }
+      }
+    }
+  }, [deviceList, activeDeviceId, activeModuleIndex, setActiveSelection]);
 
   useEffect(() => {
     if (activeDeviceId && activeModuleIndex !== null) {
@@ -73,6 +92,7 @@ const App: React.FC = () => {
   const activeDeviceMeta = deviceList.find(
     (d) => d.deviceId === activeDeviceId,
   );
+  
   const uTotal =
     activeDeviceMeta?.activeModules.find(
       (m) => m.moduleIndex === activeModuleIndex,

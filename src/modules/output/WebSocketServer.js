@@ -105,6 +105,7 @@ class WebSocketServer {
       if (message.type === "command") {
         eventBus.emitCommandRequest({
           deviceId: message.deviceId,
+          deviceType: message.deviceType,
           messageType: message.messageType,
           payload: message.payload || {},
           timestamp: new Date(),

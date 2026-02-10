@@ -225,8 +225,10 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
         }
         break;
       case "META_CHANGED_EVENT":
-        // This is a notification that metadata has changed
-        // We could trigger a toast notification here
+        // Metadata change notification - refresh device metadata from backend
+        // The payload contains change descriptions we could show in a toast
+        // For now, we just log it - the next DEVICE_METADATA will update the UI
+        console.log("[Dashboard] Metadata changed:", suo.payload);
         break;
     }
 

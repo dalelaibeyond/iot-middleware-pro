@@ -96,6 +96,10 @@ class UnifyNormalizer {
 
   /**
    * Handle HEARTBEAT message
+   * Implements Section 3.3 Case A: HEARTBEAT (The "Tick")
+   * - Step 1: Reconcile Cache activeModules with HEARTBEAT data
+   * - Step 2: Self-Healing Check (emit command.request if info missing)
+   * - Step 3: Emit HEARTBEAT SUO and DEVICE_METADATA SUO
    * @param {Object} sif - Standard Intermediate Format
    */
   handleHeartbeat(sif) {
@@ -126,7 +130,7 @@ class UnifyNormalizer {
     };
     eventBus.emitDataNormalized(heartbeatSuo);
 
-    // Update cache for each module
+    // Update cache for each module (telemetry cache)
     validModules.forEach((module) => {
       this.stateCache.updateHeartbeat(
         deviceId,
@@ -136,28 +140,11 @@ class UnifyNormalizer {
       );
     });
 
-    // Merge activeModules into metadata cache with change detection
-    // Note: HEARTBEAT doesn't include fwVer, so only update moduleId and uTotal
-    // fwVer will be preserved from cache (MODULE_INFO/DEVICE_INFO messages)
-    const metadata = {
-      deviceType,
-      activeModules: validModules.map((m) => {
-        const moduleData = {
-          moduleIndex: m.moduleIndex,
-          moduleId: m.moduleId,
-          uTotal: m.uTotal,
-        };
-        // Only include fwVer if it exists in the incoming data
-        // This prevents undefined from being set, which becomes null in JSON
-        if (m.fwVer !== undefined) {
-          moduleData.fwVer = m.fwVer;
-        }
-        return moduleData;
-      }),
-    };
-    const changes = this.stateCache.mergeMetadata(deviceId, metadata);
+    // Step 1: Reconcile activeModules into metadata cache
+    // HEARTBEAT is authoritative for presence - syncs module list
+    const changes = this.stateCache.reconcileMetadata(deviceId, validModules);
 
-    // Emit META_CHANGED_EVENT if any changes detected (moduleId/uTotal changes)
+    // Emit META_CHANGED_EVENT if any changes detected (module added/removed/uTotal changes)
     if (changes.length > 0) {
       const changeEventSuo = {
         deviceId,
@@ -169,7 +156,36 @@ class UnifyNormalizer {
       eventBus.emitDataNormalized(changeEventSuo);
     }
 
-    // Emit DEVICE_METADATA SUO from cache
+    // Step 2: Self-Healing Check
+    // Device Level: If cache ip OR mac is missing → Emit command.request
+    if (this.stateCache.isDeviceInfoMissing(deviceId)) {
+      console.log(
+        `[UnifyNormalizer] Self-healing: Device ${deviceId} missing ip/mac, requesting device info`,
+      );
+      const cmdMessageType = deviceType === "V6800" ? "QRY_DEV_MOD_INFO" : "QRY_DEVICE_INFO";
+      eventBus.emitCommandRequest({
+        deviceId,
+        deviceType,
+        messageType: cmdMessageType,
+      });
+    }
+
+    // Module Level (V5008 Only): If any active module is missing fwVer → Emit command.request
+    if (deviceType === "V5008") {
+      const modulesMissingFwVer = this.stateCache.getModulesMissingFwVer(deviceId);
+      if (modulesMissingFwVer.length > 0) {
+        console.log(
+          `[UnifyNormalizer] Self-healing: Device ${deviceId} has ${modulesMissingFwVer.length} modules missing fwVer, requesting module info`,
+        );
+        eventBus.emitCommandRequest({
+          deviceId,
+          deviceType,
+          messageType: "QRY_MODULE_INFO",
+        });
+      }
+    }
+
+    // Step 3: Emit DEVICE_METADATA SUO from cache
     this.emitDeviceMetadata(sif);
   }
 
@@ -514,14 +530,26 @@ class UnifyNormalizer {
    * @param {Object} sif - Standard Intermediate Format
    */
   handleRfidEvent(sif) {
-    const { deviceId, deviceType } = sif;
+    const { deviceId, deviceType, data } = sif;
 
     // V6800 RFID_EVENT: Trigger sync only
     if (deviceType === "V6800") {
+      // Extract moduleIndex from data (V6800 uses host_gateway_port_index)
+      // The data array contains module info with host_gateway_port_index
+      let moduleIndex = 0;
+      if (data && Array.isArray(data) && data.length > 0) {
+        // V6800 SIF structure: data[0].moduleIndex or data[0].host_gateway_port_index
+        moduleIndex = data[0].moduleIndex || data[0].host_gateway_port_index || 0;
+      }
+
       // Emit command.request to fetch fresh snapshot
       eventBus.emitCommandRequest({
         deviceId,
+        deviceType,
         messageType: "QRY_RFID_SNAPSHOT",
+        payload: {
+          moduleIndex,
+        },
       });
       // Do NOT update cache
       // Do NOT emit SUO
@@ -1251,13 +1279,19 @@ class UnifyNormalizer {
   }
 
   /**
-   * Handle metadata messages (DEVICE_INFO, MODULE_INFO, DEV_MOD_INFO)
+   * Handle metadata messages (DEVICE_INFO, MODULE_INFO, DEV_MOD_INFO, DEVICE_METADATA)
+   * Implements Section 3.3 Case B: DEVICE_INFO / MODULE_INFO / DEV_MOD_INFO / UTOTAL_CHANGED
+   * - Step 1: Change Detection (Diffing) before merging
+   * - Step 2: Merge to cache based on message type
+   * - Step 3: Emit DEVICE_METADATA SUO
    * @param {Object} sif - Standard Intermediate Format
    */
   handleMetadata(sif) {
     const { deviceId, deviceType, messageType, messageId, data } = sif;
     // Use SIF messageId for META_CHANGED_EVENT
     const metaChangedMessageId = messageId;
+
+    let changes = [];
 
     // For V5008, handle DEVICE_INFO and MODULE_INFO differently
     if (messageType === "DEVICE_INFO") {
@@ -1272,20 +1306,8 @@ class UnifyNormalizer {
         activeModules: [], // No module data in DEVICE_INFO
       };
 
-      // Merge with change detection
-      const changes = this.stateCache.mergeMetadata(deviceId, incomingMetadata);
-
-      // Emit META_CHANGED_EVENT if any changes detected
-      if (changes.length > 0) {
-        const changeEventSuo = {
-          deviceId,
-          deviceType,
-          messageType: "META_CHANGED_EVENT",
-          messageId: metaChangedMessageId,
-          payload: changes.map((desc) => ({ description: desc })),
-        };
-        eventBus.emitDataNormalized(changeEventSuo);
-      }
+      // Step 1 & 2: Diff then merge
+      changes = this.diffAndMergeMetadata(deviceId, incomingMetadata);
     } else if (messageType === "MODULE_INFO") {
       // MODULE_INFO: Updates module-level fwVer based on moduleIndex (no device-level fields)
       const activeModules =
@@ -1315,21 +1337,8 @@ class UnifyNormalizer {
         activeModules: activeModules,
       };
 
-      // Merge with change detection
-      const changes = this.stateCache.mergeMetadata(deviceId, incomingMetadata);
-
-      // Emit META_CHANGED_EVENT if any changes detected
-      if (changes.length > 0) {
-        const changeEventSuo = {
-          deviceId,
-          deviceType,
-          messageType: "META_CHANGED_EVENT",
-          messageId: metaChangedMessageId,
-          payload: changes.map((desc) => ({ description: desc })),
-        };
-        eventBus.emitDataNormalized(changeEventSuo);
-      }
-
+      // Step 1 & 2: Diff then merge
+      changes = this.diffAndMergeMetadata(deviceId, incomingMetadata);
     } else {
       // V6800 style (DEV_MOD_INFO) - handle both device and module data
       const activeModules =
@@ -1352,28 +1361,32 @@ class UnifyNormalizer {
         activeModules: activeModules,
       };
 
-      // Merge with change detection
-      const changes = this.stateCache.mergeMetadata(deviceId, incomingMetadata);
-
-      // Emit META_CHANGED_EVENT if any changes detected
-      if (changes.length > 0) {
-        const changeEventSuo = {
-          deviceId,
-          deviceType,
-          messageType: "META_CHANGED_EVENT",
-          messageId: metaChangedMessageId,
-          payload: changes.map((desc) => ({ description: desc })),
-        };
-        eventBus.emitDataNormalized(changeEventSuo);
-      }
+      // Step 1 & 2: Diff then merge
+      changes = this.diffAndMergeMetadata(deviceId, incomingMetadata);
     }
 
-    // Emit DEVICE_METADATA SUO from cache
+    // Emit META_CHANGED_EVENT if any changes detected
+    if (changes.length > 0) {
+      const changeEventSuo = {
+        deviceId,
+        deviceType,
+        messageType: "META_CHANGED_EVENT",
+        messageId: metaChangedMessageId,
+        payload: changes.map((desc) => ({ description: desc })),
+      };
+      eventBus.emitDataNormalized(changeEventSuo);
+    }
+
+    // Step 3: Emit DEVICE_METADATA SUO from cache
     this.emitDeviceMetadata(sif);
   }
 
   /**
    * Handle UTOTAL_CHANGED message
+   * Implements Section 3.3 Case B: UTOTAL_CHANGED
+   * - Step 1: Change Detection (Diffing) before merging
+   * - Step 2: Merge to cache
+   * - Step 3: Emit DEVICE_METADATA SUO
    * @param {Object} sif - Standard Intermediate Format
    */
   handleUtotalChanged(sif) {
@@ -1394,8 +1407,8 @@ class UnifyNormalizer {
         : [],
     };
 
-    // Merge with change detection
-    const changes = this.stateCache.mergeMetadata(deviceId, incomingMetadata);
+    // Step 1 & 2: Diff then merge
+    const changes = this.diffAndMergeMetadata(deviceId, incomingMetadata);
 
     // Emit META_CHANGED_EVENT if any changes detected
     if (changes.length > 0) {
@@ -1409,8 +1422,94 @@ class UnifyNormalizer {
       eventBus.emitDataNormalized(changeEventSuo);
     }
 
-    // Emit DEVICE_METADATA SUO from cache
+    // Step 3: Emit DEVICE_METADATA SUO from cache
     this.emitDeviceMetadata(sif);
+  }
+
+  /**
+   * Diff incoming metadata against cache and then merge
+   * Implements Section 3.4: Metadata Change Detection Logic (Diffing)
+   * @param {string} deviceId - Device ID
+   * @param {Object} incomingMetadata - Metadata from SIF
+   * @returns {Array} Array of change descriptions
+   */
+  diffAndMergeMetadata(deviceId, incomingMetadata) {
+    // Step 1: Detect changes before merging
+    const changes = this.detectMetadataChanges(deviceId, incomingMetadata);
+
+    // Step 2: Merge to cache
+    this.stateCache.mergeMetadata(deviceId, incomingMetadata);
+
+    return changes;
+  }
+
+  /**
+   * Detect metadata changes before merging (Section 3.4 Diffing)
+   * @param {string} deviceId - Device ID
+   * @param {Object} incoming - Incoming metadata from SIF
+   * @returns {Array} Array of change descriptions
+   */
+  detectMetadataChanges(deviceId, incoming) {
+    const changes = [];
+    const cached = this.stateCache.getMetadata(deviceId);
+
+    if (!cached) {
+      // No cache yet, treat as all new but we can't compare
+      // Return empty to avoid noise on first contact
+      return changes;
+    }
+
+    // 1. Device Level Checks
+    if (incoming.ip && incoming.ip !== cached.ip) {
+      changes.push(`Device IP changed from ${cached.ip || "null"} to ${incoming.ip}`);
+    }
+    if (incoming.fwVer && incoming.fwVer !== cached.fwVer) {
+      changes.push(`Device Firmware changed from ${cached.fwVer || "null"} to ${incoming.fwVer}`);
+    }
+
+    // 2. Module Level Checks
+    if (incoming.activeModules && Array.isArray(incoming.activeModules)) {
+      // Create a Map of cached modules using moduleIndex as key
+      const cachedModulesMap = new Map();
+      cached.activeModules.forEach((m) => {
+        cachedModulesMap.set(m.moduleIndex, m);
+      });
+
+      // Iterate through incoming modules
+      incoming.activeModules.forEach((incomingModule) => {
+        const cachedModule = cachedModulesMap.get(incomingModule.moduleIndex);
+
+        if (!cachedModule) {
+          // New Module
+          const moduleId = incomingModule.moduleId || incomingModule.moduleIndex;
+          changes.push(`Module ${moduleId} added at Index ${incomingModule.moduleIndex}`);
+        } else {
+          // Existing Module - compare fields
+          // moduleId change
+          if (incomingModule.moduleId && incomingModule.moduleId !== cachedModule.moduleId) {
+            changes.push(
+              `Module ${cachedModule.moduleId || incomingModule.moduleIndex} replaced with ${incomingModule.moduleId} at Index ${incomingModule.moduleIndex}`
+            );
+          }
+          // fwVer change
+          if (incomingModule.fwVer !== undefined && incomingModule.fwVer !== cachedModule.fwVer) {
+            const moduleId = cachedModule.moduleId || incomingModule.moduleIndex;
+            changes.push(
+              `Module ${moduleId} Firmware changed from ${cachedModule.fwVer || "null"} to ${incomingModule.fwVer}`
+            );
+          }
+          // uTotal change
+          if (incomingModule.uTotal !== undefined && incomingModule.uTotal !== cachedModule.uTotal) {
+            const moduleId = cachedModule.moduleId || incomingModule.moduleIndex;
+            changes.push(
+              `Module ${moduleId} U-Total changed from ${cachedModule.uTotal || "null"} to ${incomingModule.uTotal}`
+            );
+          }
+        }
+      });
+    }
+
+    return changes;
   }
 
   /**

@@ -1,8 +1,8 @@
 // verify_pipeline.js
-const EventBus = require('./src/core/EventBus');
-const ParserManager = require('./src/modules/parsers/ParserManager');
-const UnifyNormalizer = require('./src/modules/normalizer/UnifyNormalizer');
-const StorageService = require('./src/modules/storage/StorageService');
+const EventBus = require('../src/core/EventBus');
+const ParserManager = require('../src/modules/parsers/ParserManager');
+const UnifyNormalizer = require('../src/modules/normalizer/UnifyNormalizer');
+const StorageService = require('../src/modules/storage/StorageService');
 
 // 1. Mock the Dependencies to avoid needing Real DB/MQTT
 console.log("--- 1. Initializing System ---");
@@ -19,9 +19,10 @@ const mockKnex = {
 StorageService.db = mockKnex; 
 
 // 2. Initialize Modules
-const normalizer = new UnifyNormalizer(); // This listens to data.normalized? No, usually Parser calls it or EventBus
-const storage = new StorageService();
-storage.start(); // Listen to EventBus
+// UnifyNormalizer and StorageService are singletons
+UnifyNormalizer.initialize({});
+StorageService.initialize({ batchIntervalMs: 1000, enabled: true });
+StorageService.start(); // Listen to EventBus
 
 // 3. Define Test Input (V5008 Heartbeat Hex)
 // CC + 01(Addr) + 3963041727(ID) + 06(Total) + ... MsgID

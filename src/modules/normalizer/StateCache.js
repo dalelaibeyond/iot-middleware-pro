@@ -43,6 +43,7 @@ class StateCache {
 
   /**
    * Merge partial metadata into cache with change detection
+   * Used for DEVICE_INFO, MODULE_INFO, DEV_MOD_INFO, UTOTAL_CHANGED
    * @param {string} deviceId - Device ID
    * @param {Object} incomingMetadata - Partial metadata from SIF
    * @returns {Array} Array of change descriptions (empty if no changes)
@@ -92,7 +93,7 @@ class StateCache {
       cached.gwIp = incomingMetadata.gwIp;
     }
 
-    // Module-level change detection
+    // Module-level change detection and merge
     if (
       incomingMetadata.activeModules &&
       Array.isArray(incomingMetadata.activeModules)
@@ -169,6 +170,140 @@ class StateCache {
     }
 
     return changes;
+  }
+
+  /**
+   * Reconcile metadata from HEARTBEAT message
+   * The Heartbeat is authoritative for module presence
+   * - Match: If module exists in Cache, update moduleId/uTotal, preserve fwVer
+   * - Add: If new in Heartbeat, add to Cache
+   * - Remove: If in Cache but MISSING in Heartbeat, remove from Cache
+   * @param {string} deviceId - Device ID
+   * @param {Array} heartbeatModules - Modules from HEARTBEAT (moduleIndex, moduleId, uTotal)
+   * @returns {Array} Array of change descriptions (empty if no changes)
+   */
+  reconcileMetadata(deviceId, heartbeatModules) {
+    const cacheKey = `device:${deviceId}:info`;
+    const changes = [];
+
+    // Get or create cached metadata
+    let cached = this.metadataCache.get(cacheKey);
+    if (!cached) {
+      cached = {
+        deviceId,
+        deviceType: null,
+        ip: null,
+        mac: null,
+        fwVer: null,
+        mask: null,
+        gwIp: null,
+        activeModules: [],
+        lastSeen_info: new Date().toISOString(),
+      };
+    }
+
+    // Create maps for efficient lookup
+    const cachedModulesMap = new Map();
+    cached.activeModules.forEach((m) =>
+      cachedModulesMap.set(m.moduleIndex, m),
+    );
+
+    const heartbeatModulesMap = new Map();
+    (heartbeatModules || []).forEach((m) =>
+      heartbeatModulesMap.set(m.moduleIndex, m),
+    );
+
+    // Track which modules to keep
+    const newActiveModules = [];
+
+    // Process incoming heartbeat modules
+    (heartbeatModules || []).forEach((incomingModule) => {
+      const cachedModule = cachedModulesMap.get(incomingModule.moduleIndex);
+
+      if (!cachedModule) {
+        // New module added
+        changes.push(
+          `Module ${incomingModule.moduleId || incomingModule.moduleIndex} added at Index ${incomingModule.moduleIndex}`,
+        );
+        newActiveModules.push({ ...incomingModule });
+      } else {
+        // Existing module - update moduleId/uTotal, preserve fwVer and other fields
+        const updatedModule = {
+          ...cachedModule,
+          moduleId: incomingModule.moduleId,
+          uTotal: incomingModule.uTotal,
+        };
+
+        // Check for changes
+        if (incomingModule.moduleId !== cachedModule.moduleId) {
+          changes.push(
+            `Module ${cachedModule.moduleId || incomingModule.moduleIndex} ID changed from ${cachedModule.moduleId || "null"} to ${incomingModule.moduleId} at Index ${incomingModule.moduleIndex}`,
+          );
+        }
+        if (incomingModule.uTotal !== cachedModule.uTotal) {
+          changes.push(
+            `Module ${cachedModule.moduleId || incomingModule.moduleIndex} U-Total changed from ${cachedModule.uTotal || "null"} to ${incomingModule.uTotal}`,
+          );
+        }
+
+        newActiveModules.push(updatedModule);
+      }
+    });
+
+    // Detect removed modules (in cache but not in heartbeat)
+    cached.activeModules.forEach((cachedModule) => {
+      if (!heartbeatModulesMap.has(cachedModule.moduleIndex)) {
+        changes.push(
+          `Module ${cachedModule.moduleId || cachedModule.moduleIndex} removed from Index ${cachedModule.moduleIndex}`,
+        );
+        // Not adding to newActiveModules effectively removes it
+      }
+    });
+
+    // Replace activeModules with reconciled list
+    cached.activeModules = newActiveModules;
+
+    // Update timestamp
+    cached.lastSeen_info = new Date().toISOString();
+
+    // Save to cache
+    this.metadataCache.set(cacheKey, cached);
+
+    return changes;
+  }
+
+  /**
+   * Get modules missing fwVer (for V5008 self-healing)
+   * @param {string} deviceId - Device ID
+   * @returns {Array} Array of modules missing fwVer
+   */
+  getModulesMissingFwVer(deviceId) {
+    const cacheKey = `device:${deviceId}:info`;
+    const cached = this.metadataCache.get(cacheKey);
+
+    if (!cached || !cached.activeModules) {
+      return [];
+    }
+
+    return cached.activeModules.filter(
+      (m) => !m.fwVer || m.fwVer === null || m.fwVer === undefined,
+    );
+  }
+
+  /**
+   * Check if device metadata is missing ip or mac (for self-healing)
+   * @param {string} deviceId - Device ID
+   * @returns {boolean} True if ip or mac is missing
+   */
+  isDeviceInfoMissing(deviceId) {
+    const cacheKey = `device:${deviceId}:info`;
+    const cached = this.metadataCache.get(cacheKey);
+
+    if (!cached) {
+      return true;
+    }
+
+    return !cached.ip || !cached.mac || cached.ip === null || cached.mac === null;
   }
 
   /**
