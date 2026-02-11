@@ -160,6 +160,18 @@ class V6800Parser {
         sif.data = data;
       }
 
+      // For V6800 messages with module data, extract moduleIndex and moduleId to SIF top level
+      // This is needed for command routing (e.g., QRY_RFID_SNAPSHOT needs moduleId)
+      if (data && Array.isArray(data) && data.length > 0) {
+        const firstItem = data[0];
+        if (firstItem.moduleIndex !== undefined) {
+          sif.moduleIndex = firstItem.moduleIndex;
+        }
+        if (firstItem.moduleId !== undefined) {
+          sif.moduleId = firstItem.moduleId;
+        }
+      }
+
       // console.log(
       //   "[V6800Parser] DEBUG - Successfully parsed message, type:",
       //   sif.messageType,
@@ -354,8 +366,11 @@ class V6800Parser {
 
         const rfidData = [];
 
-        if (moduleItem.data && Array.isArray(moduleItem.data)) {
-          moduleItem.data.forEach((rfidItem) => {
+        // Check for both possible field names: data and u_data
+        const dataArray = moduleItem.data || moduleItem.u_data;
+
+        if (dataArray && Array.isArray(dataArray)) {
+          dataArray.forEach((rfidItem) => {
             const tagId = rfidItem.tag_code;
 
             // Filter out RFID items with null/empty tag_code

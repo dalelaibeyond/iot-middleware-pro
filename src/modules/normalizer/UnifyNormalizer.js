@@ -8,11 +8,13 @@
 const c = require("config");
 const eventBus = require("../../core/EventBus");
 const StateCache = require("./StateCache");
+const SmartHeartbeat = require("./SmartHeartbeat");
 
 class UnifyNormalizer {
   constructor() {
     this.config = null;
     this.stateCache = StateCache;
+    this.smartHeartbeat = new SmartHeartbeat(eventBus);
   }
 
   /**
@@ -185,7 +187,16 @@ class UnifyNormalizer {
       }
     }
 
-    // Step 3: Emit DEVICE_METADATA SUO from cache
+    // Step 3: Smart Heartbeat Check (Data Warmup)
+    // Comprehensive cache check and repair for all modules
+    this.smartHeartbeat.checkAndRepair(
+      deviceId,
+      deviceType,
+      validModules,
+      this.stateCache
+    );
+
+    // Step 4: Emit DEVICE_METADATA SUO from cache
     this.emitDeviceMetadata(sif);
   }
 
@@ -199,16 +210,19 @@ class UnifyNormalizer {
     // Use SIF messageId for RFID_EVENT as well
     const rfidEventMessageId = messageId;
 
+    // Check if data has nested structure (V6800) or flat structure (V5008)
+    const hasNestedData =
+      data && data.length > 0 && data[0].data && Array.isArray(data[0].data);
+
     // Check if this is V5008 style (top-level fields merged into SIF)
+    // Note: V6800 now also has top-level moduleIndex/moduleId, so we must check
+    // hasNestedData FIRST. V5008 style means flat data without nested structure.
     const isV5008Style =
+      !hasNestedData &&
       moduleIndex !== undefined &&
       moduleId !== undefined &&
       data &&
       Array.isArray(data);
-
-    // Check if data has nested structure (V6800) or flat structure (V5008)
-    const hasNestedData =
-      data && data.length > 0 && data[0].data && Array.isArray(data[0].data);
 
     if (isV5008Style) {
       // V5008 style: top-level fields (moduleIndex, moduleId) are merged into SIF
@@ -530,17 +544,15 @@ class UnifyNormalizer {
    * @param {Object} sif - Standard Intermediate Format
    */
   handleRfidEvent(sif) {
-    const { deviceId, deviceType, data } = sif;
+    const { deviceId, deviceType, data, moduleIndex, moduleId } = sif;
 
     // V6800 RFID_EVENT: Trigger sync only
     if (deviceType === "V6800") {
-      // Extract moduleIndex from data (V6800 uses host_gateway_port_index)
-      // The data array contains module info with host_gateway_port_index
-      let moduleIndex = 0;
-      if (data && Array.isArray(data) && data.length > 0) {
-        // V6800 SIF structure: data[0].moduleIndex or data[0].host_gateway_port_index
-        moduleIndex = data[0].moduleIndex || data[0].host_gateway_port_index || 0;
-      }
+      // Use moduleIndex and moduleId from SIF top-level fields (set by V6800Parser)
+      // V6800Parser extracts host_gateway_port_index -> moduleIndex
+      // and extend_module_sn -> moduleId
+      const effectiveModuleIndex = moduleIndex || 0;
+      const effectiveModuleId = moduleId || null;
 
       // Emit command.request to fetch fresh snapshot
       eventBus.emitCommandRequest({
@@ -548,7 +560,8 @@ class UnifyNormalizer {
         deviceType,
         messageType: "QRY_RFID_SNAPSHOT",
         payload: {
-          moduleIndex,
+          moduleIndex: effectiveModuleIndex,
+          moduleId: effectiveModuleId,
         },
       });
       // Do NOT update cache

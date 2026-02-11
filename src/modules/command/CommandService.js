@@ -254,14 +254,18 @@ class CommandService {
         }
         break;
       case "SET_COLOR":
-        if (
-          payload.moduleIndex === undefined ||
-          payload.sensorIndex === undefined ||
-          payload.colorCode === undefined
-        ) {
+        if (payload.moduleIndex === undefined) {
           throw new Error(
-            `Missing required parameters: moduleIndex, sensorIndex, and colorCode for ${messageType}`,
+            `Missing required parameter: moduleIndex for ${messageType}`,
           );
+        }
+        // Check for colorMap format (new) or single sensorIndex/colorCode (legacy)
+        if (!payload.colorMap) {
+          if (payload.sensorIndex === undefined || payload.colorCode === undefined) {
+            throw new Error(
+              `Missing required parameters: either colorMap array or sensorIndex and colorCode for ${messageType}`,
+            );
+          }
         }
         break;
     }
@@ -328,7 +332,7 @@ class CommandService {
           gateway_sn: deviceId,
           data: [
             {
-              extend_module_sn: payload.extendModuleSn || null,
+              extend_module_sn: payload.moduleId || null,
               host_gateway_port_index: moduleIndex,
               u_index_list: null,
             },
@@ -374,6 +378,26 @@ class CommandService {
           ],
         };
       case "SET_COLOR":
+        // Build u_color_data from colorMap (new format) or fallback to legacy formats
+        let uColorData;
+        if (Array.isArray(payload.colorMap)) {
+          uColorData = payload.colorMap.map((item) => ({
+            u_index: item.sensorIndex,
+            color_code: item.colorCode,
+          }));
+        } else if (Array.isArray(payload.leds)) {
+          uColorData = payload.leds.map((led) => ({
+            u_index: led.sensorIndex,
+            color_code: led.colorCode,
+          }));
+        } else {
+          uColorData = [
+            {
+              u_index: sensorIndex,
+              color_code: colorCode,
+            },
+          ];
+        }
         return {
           msg_type: "set_module_property_req",
           gateway_sn: deviceId,
@@ -383,17 +407,7 @@ class CommandService {
               host_gateway_port_index: moduleIndex,
               extend_module_sn: payload.extendModuleSn || null,
               module_type: 2,
-              u_color_data: Array.isArray(payload.leds)
-                ? payload.leds.map((led) => ({
-                    u_index: led.sensorIndex,
-                    color_code: led.colorCode,
-                  }))
-                : [
-                    {
-                      u_index: sensorIndex,
-                      color_code: colorCode,
-                    },
-                  ],
+              u_color_data: uColorData,
             },
           ],
         };
