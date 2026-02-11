@@ -1,141 +1,158 @@
 # IoT Middleware Pro v2.0
 
-A high-throughput integration layer that unifies data from heterogeneous IoT Gateways (V5008/Binary and V6800/JSON) into a standardized format for real-time dashboards and historical SQL storage.
+> High-throughput integration layer unifying data from heterogeneous IoT Gateways (V5008/Binary and V6800/JSON) into a standardized format for real-time dashboards and historical SQL storage.
 
-## Features
+---
 
-- **Multi-Protocol Support**: Handles both V5008 (binary) and V6800 (JSON) gateway formats
-- **Event-Driven Architecture**: Modular monolith with event bus for loose coupling
-- **Real-time Processing**: MQTT-based ingress with WebSocket output for live dashboards
-- **Data Normalization**: Converts device-specific formats to standardized unified objects (SUO)
-- **State Management**: In-memory cache for device state and metadata
-- **Batch Storage**: Optimized MySQL storage with pivoted tables for telemetry data
-- **REST API**: Express.js backend for dashboard integration
-- **Command Support**: Outbound commands for device control and synchronization
+## 📚 Documentation
 
-## Tech Stack
+This project maintains **As-Built Specifications** in the `docs/` folder. These documents are verified against the actual source code and represent the current implementation.
 
-- **Runtime**: Node.js v18+
-- **Language**: JavaScript (CommonJS)
-- **Architecture**: Modular Monolith (Event-Driven)
-- **Database**: MySQL 8.0 (Library: `knex` + `mysql2`)
-- **Transport**: MQTT (Library: `mqtt`)
-- **API**: Express.js
-- **Logging**: Winston
+| Document | Description |
+|----------|-------------|
+| [docs/middleware_spec.md](docs/middleware_spec.md) | Architecture, API specification, Command Service, Database Schema |
+| [docs/normalizer_spec.md](docs/normalizer_spec.md) | UnifyNormalizer, SmartHeartbeat, CacheWatchdog logic |
+| [docs/v5008_parser_spec.md](docs/v5008_parser_spec.md) | V5008 Binary Parser specification |
+| [docs/v6800_parser_spec.md](docs/v6800_parser_spec.md) | V6800 JSON Parser specification |
+| [docs/dashboard_spec.md](docs/dashboard_spec.md) | React Dashboard frontend specification |
 
-## Installation
+---
+
+## 🏗️ Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        IoT Middleware Pro v2.0                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌──────────┐    ┌──────────┐    ┌──────────────┐    ┌────────────────┐ │
+│  │  MQTT    │ →  │ V5008/   │ →  │   Unify      │ →  │   Storage      │ │
+│  │  Broker  │    │ V6800    │    │ Normalizer   │    │   Service      │ │
+│  │          │    │ Parser   │    │              │    │   (MySQL)      │ │
+│  └──────────┘    └──────────┘    │ - StateCache │    └────────────────┘ │
+│                                  │ - SmartHB    │    ┌────────────────┐ │
+│         ↓                        │ - Watchdog   │ →  │   ApiServer    │ │
+│    V5008Upload/                  └──────────────┘    │   (REST API)   │ │
+│    V6800Upload/                      ↓               └────────────────┘ │
+│                                  data.normalized     ┌────────────────┐ │
+│                                                         WebSocket    │ │
+│                                                         Server       │ │
+│                                                      └────────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+                           ┌────────────────┐
+                           │    Dashboard   │
+                           │  (React/Vite)  │
+                           └────────────────┘
+```
+
+**Data Flow:** MQTT Ingest → Parse (SIF) → Normalize (SUO) → Distribute (Storage/API/WebSocket)
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js v18+
+- MySQL 8.0
+- MQTT Broker (e.g., Mosquitto)
+
+### 1. Install Dependencies
 
 ```bash
+# Install backend dependencies
 npm install
+
+# Install dashboard dependencies
+cd dashboard
+npm install
+cd ..
 ```
 
-## Configuration
-
-Edit `src/config/default.json` to configure:
-
-- MQTT broker connection
-- Database connection
-- Module settings (storage, webhook, API, WebSocket, etc.)
-
-## Database Setup
-
-Execute the database schema:
+### 2. Configure Database
 
 ```bash
-mysql -u root -p iot_middleware < database/schema.sql
+# Create database and tables
+mysql -u root -p < database/schema.sql
 ```
 
-## Running
+### 3. Configure Environment
 
-```bash
-# Production
-npm start
-
-# Development (with auto-reload)
-npm run dev
-```
-
-## Project Structure
-
-```
-src/
-├── core/
-│   ├── EventBus.js          # Events: mqtt.message, data.normalized, command.request
-│   ├── Database.js          # Knex.js MySQL connection pool
-│   └── ModuleManager.js     # Lifecycle manager
-├── modules/
-│   ├── ingress/
-│   │   └── MqttSubscriber.js # Inbound listener
-│   ├── parsers/
-│   │   ├── V5008Parser.js    # Implements V5008Parser_Spec
-│   │   ├── V6800Parser.js    # Implements V6800Parser_Spec
-│   │   └── ParserManager.js  # Router
-│   ├── normalizer/
-│   │   ├── UnifyNormalizer.js # Implements UnifyNormalizer_Spec
-│   │   ├── StateCache.js      # Dual-Purpose Cache (Logic + API)
-│   │   └── CacheWatchdog.js   # Offline Detection Service
-│   ├── storage/
-│   │   └── StorageService.js  # Batch Writer & Pivoting Logic
-│   ├── command/
-│   │   └── CommandService.js  # Outbound Commands (Sync/Control)
-│   └── output/
-│       ├── MqttRelay.js
-│       ├── WebhookService.js
-│       ├── ApiServer.js       # Dashboard Backend
-│       └── WebSocketServer.js # Real-time feed
-└── config/
-    └── default.json
-```
-
-## Data Flow
-
-### Ingress Flow (Device → Dashboard)
-
-1. **Ingest**: `MqttSubscriber` → `mqtt.message` event
-2. **Parse**: `ParserManager` selects Parser → Returns **SIF** (Standard Intermediate Format)
-3. **Normalize**: `UnifyNormalizer` converts SIF → **SUO** (Standard Unified Object)
-4. **Distribute**: Emits `data.normalized` event
-5. **Output**: `StorageService`, `WebSocketServer`, `ApiServer` consume `data.normalized`
-
-### Egress Flow (Dashboard → Device)
-
-1. **API Request**: Dashboard sends `POST /api/commands`
-2. **Validation**: `ApiServer` validates required fields (deviceId, deviceType, messageType)
-3. **Event Emission**: Emits `command.request` event with command details
-4. **Command Processing**: `CommandService` receives event, builds device-specific protocol
-5. **MQTT Publish**: Publishes to `V5008Download/{deviceId}` or `V6800Download/{deviceId}`
-6. **Device Response**: Device executes command and sends response via MQTT
-7. **State Update**: Response is processed through normal ingress flow
-
-## API Endpoints
-
-### System & Health
-
-- `GET /api/health` - System health check
-- `GET /api/config` - System configuration (passwords redacted)
-
-### Device Information
-
-- `GET /api/devices` - List all devices
-- `GET /api/devices/:deviceId/modules` - Get all modules for a device
-- `GET /api/devices/:deviceId/modules/:moduleIndex/state` - Module state detail
-
-### Telemetry & Metadata
-
-- `GET /api/uos/:deviceId/:moduleIndex` - Get telemetry for a specific module (Unified Object Structure)
-- `GET /api/meta/:deviceId` - Get device metadata
-
-### Device Control
-
-- `POST /api/commands` - Send control commands to devices
-
-#### POST /api/commands Request Format:
+Edit `config/default.json`:
 
 ```json
 {
+  "mqtt": {
+    "brokerUrl": "mqtt://localhost:1883"
+  },
+  "modules": {
+    "database": {
+      "connection": {
+        "host": "localhost",
+        "user": "root",
+        "password": "your-password",
+        "database": "iot_middleware"
+      }
+    }
+  }
+}
+```
+
+### 4. Start the Middleware
+
+```bash
+# Production mode
+npm start
+
+# Development mode (with auto-reload)
+npm run dev
+```
+
+The middleware will start:
+- REST API on port 3000
+- WebSocket Server on port 3001
+
+### 5. Start the Dashboard
+
+```bash
+cd dashboard
+
+# Development mode
+npm run dev
+
+# Open http://localhost:5173
+```
+
+---
+
+## 🔌 REST API
+
+### System Health
+```bash
+GET http://localhost:3000/api/health
+```
+
+### Device Topology
+```bash
+GET http://localhost:3000/api/live/topology
+```
+
+### Module State
+```bash
+GET http://localhost:3000/api/live/devices/{deviceId}/modules/{moduleIndex}
+```
+
+### Send Command
+```bash
+POST http://localhost:3000/api/commands
+Content-Type: application/json
+
+{
   "deviceId": "2437871205",
-  "deviceType": "V5008", // "V5008" or "V6800"
-  "messageType": "SET_COLOR", // The Unified Enum
+  "deviceType": "V5008",
+  "messageType": "SET_COLOR",
   "payload": {
     "moduleIndex": 1,
     "sensorIndex": 10,
@@ -144,138 +161,145 @@ src/
 }
 ```
 
-#### POST /api/commands Response Format:
+**Full API documentation:** [docs/middleware_spec.md](docs/middleware_spec.md)
+
+---
+
+## 📡 WebSocket Protocol
+
+**Endpoint:** `ws://localhost:3001`
+
+The WebSocket broadcasts SUO (Standard Unified Object) messages immediately after normalization:
 
 ```json
 {
-  "status": "sent",
-  "commandId": "cmd_1770039677260_zlea2vwmo"
-}
-```
-
-## V6800Parser Usage
-
-The V6800Parser converts JSON messages from V6800 devices into Standard Intermediate Format (SIF).
-
-### Basic Usage
-
-```javascript
-const V6800Parser = require("./src/modules/parsers/V6800Parser");
-
-// Example: Parse a heartbeat message
-const topic = "V6800Upload/2105101125/heart_beat_req";
-const message = {
-  gateway_sn: "2105101125",
-  msg_type: "heart_beat_req",
-  uuid_number: 755052881,
-  data: [
-    {
-      module_index: 4,
-      module_sn: "3468672873",
-      module_u_num: 12,
-    },
-  ],
-};
-
-const sif = V6800Parser.parse(topic, message);
-console.log(sif);
-```
-
-### Output SIF Structure
-
-```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "HEARTBEAT",
+  "deviceId": "2437871205",
+  "deviceType": "V5008",
+  "messageType": "TEMP_HUM",
   "messageId": "755052881",
-  "meta": {
-    "topic": "V6800Upload/2105101125/heart_beat_req",
-    "rawType": "heart_beat_req"
-  },
-  "data": [
-    {
-      "moduleIndex": 4,
-      "moduleId": "3468672873",
-      "uTotal": 12
-    }
+  "moduleIndex": 1,
+  "moduleId": "3963041727",
+  "payload": [
+    { "sensorIndex": 10, "temp": 24.5, "hum": 50.1 }
   ]
 }
 ```
 
-### Supported Message Types
+---
 
-| Message Type        | Raw `msg_type`                       | Description                           |
-| ------------------- | ------------------------------------ | ------------------------------------- |
-| HEARTBEAT           | heart_beat_req                       | Periodic heartbeat                    |
-| RFID_SNAPSHOT       | u_state_resp                         | RFID tag snapshot                     |
-| RFID_EVENT          | u_state_changed_notify_req           | RFID tag attach/detach event          |
-| TEMP_HUM            | temper_humidity_exception_nofity_req | Temperature/humidity threshold change |
-| QRY_TEMP_HUM_RESP   | temper_humidity_resp                 | Temperature/humidity query response   |
-| DOOR_STATE          | door_state_changed_notify_req        | Door state change event               |
-| QRY_DOOR_STATE_RESP | door_state_resp                      | Door state query response             |
-| DEV_MOD_INFO        | devies_init_req                      | Device/module information             |
-| UTOTAL_CHANGED      | devices_changed_req                  | Module configuration change           |
-| QRY_CLR_RESP        | u_color                              | Color query response                  |
-| SET_CLR_RESP        | set_module_property_result_req       | Color set response                    |
-| CLN_ALM_RESP        | clear_u_warning                      | Clear alarm response                  |
+## 🗄️ Database Schema
 
-### Running Verification Tests
+Key tables:
 
-To verify the V6800Parser implementation:
+| Table | Purpose |
+|-------|---------|
+| `iot_meta_data` | Device metadata (UPSERT on device_id) |
+| `iot_temp_hum` | Temperature/humidity (pivoted columns 10-15) |
+| `iot_noise_level` | Noise levels (pivoted columns 16-18) |
+| `iot_rfid_event` | RFID attach/detach events |
+| `iot_door_event` | Door state changes |
+| `iot_heartbeat` | Device heartbeats |
+| `iot_topchange_event` | Configuration change audit log |
+
+**Full schema:** [database/schema.sql](database/schema.sql)
+
+---
+
+## 📁 Project Structure
+
+```
+iot-middleware-pro/
+├── config/
+│   └── default.json              # Main configuration
+├── dashboard/                    # React/Vite frontend
+│   ├── src/
+│   │   ├── api/                  # API client & endpoints
+│   │   ├── components/           # UI components
+│   │   ├── hooks/                # Custom React hooks
+│   │   └── store/                # Zustand store
+│   └── App.tsx                   # Main app component
+├── database/
+│   └── schema.sql                # MySQL schema
+├── docs/                         # As-Built Specifications
+│   ├── middleware_spec.md
+│   ├── normalizer_spec.md
+│   ├── v5008_parser_spec.md
+│   ├── v6800_parser_spec.md
+│   └── dashboard_spec.md
+├── src/
+│   ├── core/                     # Core infrastructure
+│   │   ├── Database.js           # Knex.js MySQL pool
+│   │   ├── EventBus.js           # Event emitter
+│   │   └── ModuleManager.js      # Lifecycle manager
+│   └── modules/
+│       ├── ingress/
+│       │   └── MqttSubscriber.js # MQTT listener
+│       ├── parsers/
+│       │   ├── V5008Parser.js    # Binary protocol parser
+│       │   ├── V6800Parser.js    # JSON protocol parser
+│       │   └── ParserManager.js  # Parser router
+│       ├── normalizer/
+│       │   ├── UnifyNormalizer.js
+│       │   ├── StateCache.js
+│       │   ├── SmartHeartbeat.js
+│       │   └── CacheWatchdog.js
+│       ├── storage/
+│       │   └── StorageService.js # Batch writer
+│       ├── command/
+│       │   └── CommandService.js # Outbound commands
+│       └── output/
+│           ├── ApiServer.js      # REST API
+│           ├── WebSocketServer.js
+│           ├── MqttRelay.js
+│           └── WebhookService.js
+└── tests/                        # Test scripts
+```
+
+---
+
+## 🧪 Testing
 
 ```bash
+# Run Jest tests
+npm test
+
+# Run V5008 parser verification
+node tests/verify_v5008.js
+
+# Run V6800 parser verification
 node tests/verify_v6800.js
+
+# Run pipeline validation
+node tests/verify_pipeline.js
 ```
 
-This will run 19 test cases covering all message types and edge cases.
+---
 
-## CommandService Usage
+## 🔧 Supported Devices
 
-The CommandService handles outbound commands to devices via MQTT, translating internal system intents into device-specific protocols.
+### V5008 (Binary Protocol)
 
-### Direct Usage
+- Max 5 modules per gateway
+- Temperature/Humidity sensors (indices 10-15)
+- Noise sensors (indices 16-18)
+- RFID U-position sensors (indices 1-54)
+- Single door sensor
 
-```javascript
-const CommandService = require("./src/modules/command/CommandService");
+### V6800 (JSON Protocol)
 
-// Send a command directly
-await CommandService.sendCommand(
-  "2437871205", // deviceId
-  "V5008", // deviceType
-  "SET_COLOR", // messageType
-  {
-    moduleIndex: 1,
-    sensorIndex: 10,
-    colorCode: 1,
-  },
-);
-```
+- Max 24 modules per gateway
+- Temperature/Humidity sensors
+- RFID U-position sensors
+- Single or Dual door sensors
 
-### Supported Message Types
+---
 
-#### V5008 (Binary Protocol)
+## 📄 License
 
-- `QRY_RFID_SNAPSHOT` - Query RFID snapshot
-- `QRY_TEMP_HUM` - Query temperature/humidity
-- `QRY_DOOR_STATE` - Query door state
-- `QRY_NOISE_LEVEL` - Query noise level
-- `QRY_DEVICE_INFO` - Query device information
-- `QRY_MODULE_INFO` - Query module information
-- `QRY_COLOR` - Query color state
-- `CLN_ALARM` - Clear alarm
-- `SET_COLOR` - Set LED color
+[Your License Here]
 
-#### V6800 (JSON Protocol)
+---
 
-- `QRY_RFID_SNAPSHOT` - Query RFID snapshot
-- `QRY_TEMP_HUM` - Query temperature/humidity
-- `QRY_DOOR_STATE` - Query door state
-- `QRY_DEV_MOD_INFO` - Query device/module information
-- `QRY_COLOR` - Query color state
-- `CLN_ALARM` - Clear alarm
-- `SET_COLOR` - Set LED color
+## 🤝 Contributing
 
-## License
-
-MIT
+Please read [AGENTS.md](AGENTS.md) for coding conventions and project guidelines.
