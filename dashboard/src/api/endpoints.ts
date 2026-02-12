@@ -11,8 +11,8 @@ import {
  */
 
 /**
- * Transform snake_case object keys to camelCase
- * Uses specific field name mappings for compatibility with dashboard
+ * Recursively transforms object keys to camelCase
+ * Assumes API returns camelCase as per v2.1 spec
  */
 function toCamelCase<T>(obj: any): T {
   if (!obj || typeof obj !== "object") {
@@ -26,34 +26,8 @@ function toCamelCase<T>(obj: any): T {
   const result: any = {};
   for (const key in obj) {
     if (obj.hasOwnProperty(key)) {
-      // Use specific field name mappings for dashboard compatibility
-      let camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-
-      // Apply specific field name mappings
-      const fieldMappings: Record<string, string> = {
-        device_id: "deviceId",
-        device_type: "deviceType",
-        device_ip: "ip",
-        device_mac: "mac",
-        device_fwVer: "fwVer",
-        device_mask: "mask",
-        device_gwIp: "gwIp",
-        modules: "activeModules",
-        // Rack state field mappings
-        rfid_snapshot: "rfidSnapshot",
-        temp_hum: "tempHum",
-        noise_level: "noiseLevel",
-        last_seen_hb: "lastSeenHb",
-        last_seen_th: "lastSeenTh",
-        last_seen_ns: "lastSeenNs",
-        last_seen_rfid: "lastSeenRfid",
-        last_seen_door: "lastSeenDoor",
-      };
-
-      if (fieldMappings[key]) {
-        camelKey = fieldMappings[key];
-      }
-
+      // Convert snake_case to camelCase for any legacy fields
+      const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
       result[camelKey] = toCamelCase(obj[key]);
     }
   }
@@ -99,19 +73,19 @@ export const getRackState = async (
     moduleIndex: camelCaseData.moduleIndex ?? moduleIndex,
     isOnline: camelCaseData.isOnline ?? true,
     // Sensor arrays with defaults
-    rfidSnapshot: camelCaseData.rfidSnapshot || camelCaseData.rfid_snapshot || [],
-    tempHum: camelCaseData.tempHum || camelCaseData.temp_hum || [],
-    noiseLevel: camelCaseData.noiseLevel || camelCaseData.noise_level || [],
+    rfidSnapshot: camelCaseData.rfidSnapshot || [],
+    tempHum: camelCaseData.tempHum || [],
+    noiseLevel: camelCaseData.noiseLevel || [],
     // Door states
     doorState: camelCaseData.doorState ?? null,
     door1State: camelCaseData.door1State ?? null,
     door2State: camelCaseData.door2State ?? null,
     // Timestamps
-    lastSeenHb: camelCaseData.lastSeenHb || camelCaseData.lastSeen_hb || null,
-    lastSeenTh: camelCaseData.lastSeenTh || camelCaseData.lastSeen_th || null,
-    lastSeenNs: camelCaseData.lastSeenNs || camelCaseData.lastSeen_ns || null,
-    lastSeenRfid: camelCaseData.lastSeenRfid || camelCaseData.lastSeen_rfid || null,
-    lastSeenDoor: camelCaseData.lastSeenDoor || camelCaseData.lastSeen_door || null,
+    lastSeenHb: camelCaseData.lastSeenHb || null,
+    lastSeenTh: camelCaseData.lastSeenTh || null,
+    lastSeenNs: camelCaseData.lastSeenNs || null,
+    lastSeenRfid: camelCaseData.lastSeenRfid || null,
+    lastSeenDoor: camelCaseData.lastSeenDoor || null,
     ...camelCaseData, // Spread original data to preserve any additional fields
   };
   
@@ -198,7 +172,7 @@ export const getHistoryEvents = async (params?: {
 export const getHistoryTelemetry = async (params?: {
   deviceId?: string;
   moduleIndex?: number;
-  type?: "temp_hum" | "noise";
+  type?: "tempHum" | "noiseLevel";
   startTime?: string;
   endTime?: string;
   limit?: number;

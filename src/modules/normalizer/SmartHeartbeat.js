@@ -138,11 +138,11 @@ class SmartHeartbeat {
       }
     }
 
-    // 2. Check Env Sensors (temp_hum)
-    // Empty array OR lastSeen_th > 5 mins old
+    // 2. Check Env Sensors (tempHum)
+    // Empty array OR lastSeenTh > 5 mins old
     const needsTempHum = this._needsRefresh(
-      cacheSnapshot.temp_hum,
-      cacheSnapshot.lastSeen_th,
+      cacheSnapshot.tempHum,
+      cacheSnapshot.lastSeenTh,
       this.stalenessThresholds.tempHum
     );
     if (needsTempHum) {
@@ -151,15 +151,15 @@ class SmartHeartbeat {
         deviceType,
         moduleIndex,
         messageType: "QRY_TEMP_HUM",
-        reason: `Empty or stale (lastSeen: ${cacheSnapshot.lastSeen_th || "never"})`,
+        reason: `Empty or stale (lastSeen: ${cacheSnapshot.lastSeenTh || "never"})`,
       });
     }
 
     // 3. Check RFID Tags
-    // Empty array OR lastSeen_rfid > 60 mins old
+    // Empty array OR lastSeenRfid > 60 mins old
     const needsRfid = this._needsRefresh(
-      cacheSnapshot.rfid_snapshot,
-      cacheSnapshot.lastSeen_rfid,
+      cacheSnapshot.rfidSnapshot,
+      cacheSnapshot.lastSeenRfid,
       this.stalenessThresholds.rfid
     );
     if (needsRfid) {
@@ -168,7 +168,7 @@ class SmartHeartbeat {
         deviceType,
         moduleIndex,
         messageType: "QRY_RFID_SNAPSHOT",
-        reason: `Empty or stale (lastSeen: ${cacheSnapshot.lastSeen_rfid || "never"})`,
+        reason: `Empty or stale (lastSeen: ${cacheSnapshot.lastSeenRfid || "never"})`,
       });
     }
 

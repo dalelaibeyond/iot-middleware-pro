@@ -5,20 +5,15 @@ import { cn } from "../../utils/cn";
 
 interface EnvListProps {
   tempHum?: TempHum[];
-  temp_hum?: TempHum[];
   noise?: NoiseLevel[];
-  noise_level?: NoiseLevel[];
 }
 
 export const EnvList: React.FC<EnvListProps> = ({
   tempHum,
-  temp_hum,
   noise,
-  noise_level,
 }) => {
-  // Support both camelCase and snake_case field names
-  const tempHumData = tempHum || temp_hum || [];
-  const noiseData = noise || noise_level || [];
+  const tempHumData = tempHum || [];
+  const noiseData = noise || [];
 
   return (
     <div className="flex flex-col gap-6">

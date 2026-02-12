@@ -285,9 +285,9 @@ class UnifyNormalizer {
       this.stateCache.updateTelemetryField(
         deviceId,
         moduleIndex,
-        "rfid_snapshot",
+        "rfidSnapshot",
         currentSnapshot,
-        "lastSeen_rfid",
+        "lastSeenRfid",
       );
     } else if (hasNestedData) {
       // V6800 style: nested structure with module.data containing array of readings
@@ -364,9 +364,9 @@ class UnifyNormalizer {
         this.stateCache.updateTelemetryField(
           deviceId,
           moduleIndex,
-          "rfid_snapshot",
+          "rfidSnapshot",
           currentSnapshot,
-          "lastSeen_rfid",
+          "lastSeenRfid",
         );
       });
     } else if (
@@ -451,9 +451,9 @@ class UnifyNormalizer {
       this.stateCache.updateTelemetryField(
         deviceId,
         moduleIndex,
-        "rfid_snapshot",
+        "rfidSnapshot",
         currentSnapshot,
-        "lastSeen_rfid",
+        "lastSeenRfid",
       );
     } else {
       // V5008 style: flat structure where each item is a single reading
@@ -531,9 +531,9 @@ class UnifyNormalizer {
         this.stateCache.updateTelemetryField(
           deviceId,
           moduleIndex,
-          "rfid_snapshot",
+          "rfidSnapshot",
           currentSnapshot,
-          "lastSeen_rfid",
+          "lastSeenRfid",
         );
       });
     }
@@ -702,9 +702,9 @@ class UnifyNormalizer {
         this.stateCache.updateTelemetryField(
           deviceId,
           moduleIndex,
-          "temp_hum",
+          "tempHum",
           normalizedData,
-          "lastSeen_th",
+          "lastSeenTh",
         );
       });
     } else if (
@@ -759,9 +759,9 @@ class UnifyNormalizer {
       this.stateCache.updateTelemetryField(
         deviceId,
         moduleIndex,
-        "temp_hum",
+        "tempHum",
         normalizedData,
-        "lastSeen_th",
+        "lastSeenTh",
       );
     } else if (
       moduleIndex !== undefined &&
@@ -815,9 +815,9 @@ class UnifyNormalizer {
       this.stateCache.updateTelemetryField(
         deviceId,
         moduleIndex,
-        "temp_hum",
+        "tempHum",
         normalizedData,
-        "lastSeen_th",
+        "lastSeenTh",
       );
     } else {
       // V5008 style: flat structure where each item has its own moduleIndex/moduleId
@@ -868,9 +868,9 @@ class UnifyNormalizer {
         this.stateCache.updateTelemetryField(
           deviceId,
           moduleIndex,
-          "temp_hum",
+          "tempHum",
           normalizedData,
-          "lastSeen_th",
+          "lastSeenTh",
         );
       });
     }
@@ -932,9 +932,9 @@ class UnifyNormalizer {
         this.stateCache.updateTelemetryField(
           deviceId,
           moduleIndex,
-          "noise_level",
+          "noiseLevel",
           normalizedData,
-          "lastSeen_ns",
+          "lastSeenNs",
         );
       });
     } else if (
@@ -985,9 +985,9 @@ class UnifyNormalizer {
       this.stateCache.updateTelemetryField(
         deviceId,
         moduleIndex,
-        "noise_level",
+        "noiseLevel",
         normalizedData,
-        "lastSeen_ns",
+        "lastSeenNs",
       );
     } else if (
       moduleIndex !== undefined &&
@@ -1037,9 +1037,9 @@ class UnifyNormalizer {
       this.stateCache.updateTelemetryField(
         deviceId,
         moduleIndex,
-        "noise_level",
+        "noiseLevel",
         normalizedData,
-        "lastSeen_ns",
+        "lastSeenNs",
       );
     } else {
       // V5008 style: flat structure where each item has its own moduleIndex/moduleId
@@ -1089,9 +1089,9 @@ class UnifyNormalizer {
         this.stateCache.updateTelemetryField(
           deviceId,
           moduleIndex,
-          "noise_level",
+          "noiseLevel",
           normalizedData,
-          "lastSeen_ns",
+          "lastSeenNs",
         );
       });
     }
@@ -1152,7 +1152,7 @@ class UnifyNormalizer {
         telemetry.doorState = doorState.doorState;
         telemetry.door1State = doorState.door1State;
         telemetry.door2State = doorState.door2State;
-        telemetry.lastSeen_door = new Date().toISOString();
+        telemetry.lastSeenDoor = new Date().toISOString();
         this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
       });
     } else if (data && typeof data === "object" && !Array.isArray(data)) {
@@ -1191,7 +1191,7 @@ class UnifyNormalizer {
       telemetry.doorState = doorStatePayload.doorState;
       telemetry.door1State = doorStatePayload.door1State;
       telemetry.door2State = doorStatePayload.door2State;
-      telemetry.lastSeen_door = new Date().toISOString();
+      telemetry.lastSeenDoor = new Date().toISOString();
       this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
     } else if (moduleIndex !== undefined && moduleId !== undefined) {
       // V5008 style: door state fields merged directly into SIF (no data object)
@@ -1227,7 +1227,7 @@ class UnifyNormalizer {
       telemetry.doorState = doorStatePayload.doorState;
       telemetry.door1State = doorStatePayload.door1State;
       telemetry.door2State = doorStatePayload.door2State;
-      telemetry.lastSeen_door = new Date().toISOString();
+      telemetry.lastSeenDoor = new Date().toISOString();
       this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
     } else {
       console.warn(
@@ -1281,7 +1281,7 @@ class UnifyNormalizer {
       telemetry.doorState = doorStatePayload.doorState;
       telemetry.door1State = doorStatePayload.door1State;
       telemetry.door2State = doorStatePayload.door2State;
-      telemetry.lastSeen_door = new Date().toISOString();
+      telemetry.lastSeenDoor = new Date().toISOString();
       this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
     } else {
       console.warn(

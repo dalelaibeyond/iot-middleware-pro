@@ -185,7 +185,7 @@ class ApiServer {
                 uTotal: telem.uTotal,
                 fwVer: telem.fwVer,
                 isOnline: telem.isOnline,
-                lastSeenHb: telem.lastSeen_hb,
+                lastSeenHb: telem.lastSeenHb,
               });
             }
           }
@@ -218,7 +218,7 @@ class ApiServer {
             mask: metadata.mask,
             gwIp: metadata.gwIp,
             isOnline: true,
-            lastSeenInfo: metadata.lastSeen_info,
+            lastSeenInfo: metadata.lastSeenInfo,
             modules: modules.sort((a, b) => a.moduleIndex - b.moduleIndex),
           });
         }
@@ -372,7 +372,7 @@ class ApiServer {
 
         let results = [];
 
-        if (!type || type === "temp_hum") {
+        if (!type || type === "tempHum") {
           const thQuery = db("iot_temp_hum")
             .select("*")
             .orderBy("parse_at", "desc")
@@ -384,10 +384,10 @@ class ApiServer {
           if (endTime) thQuery.where("parse_at", "<=", new Date(endTime));
 
           const thData = await thQuery;
-          results.push(...thData.map(d => ({ ...d, telemetryType: "temp_hum" })));
+          results.push(...thData.map(d => ({ ...d, telemetryType: "tempHum" })));
         }
 
-        if (!type || type === "noise") {
+        if (!type || type === "noiseLevel") {
           const noiseQuery = db("iot_noise_level")
             .select("*")
             .orderBy("parse_at", "desc")
@@ -399,7 +399,7 @@ class ApiServer {
           if (endTime) noiseQuery.where("parse_at", "<=", new Date(endTime));
 
           const noiseData = await noiseQuery;
-          results.push(...noiseData.map(d => ({ ...d, telemetryType: "noise" })));
+          results.push(...noiseData.map(d => ({ ...d, telemetryType: "noiseLevel" })));
         }
 
         // Sort by timestamp desc

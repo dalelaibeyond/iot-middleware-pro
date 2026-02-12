@@ -153,11 +153,8 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
         deviceId: suoDeviceId,
         moduleIndex: suoModuleIndex || 0,
         isOnline: true,
-        rfid_snapshot: [],
         rfidSnapshot: [],
-        temp_hum: [],
         tempHum: [],
-        noise_level: [],
         noiseLevel: [],
         doorState: null,
         door1State: null,
@@ -172,32 +169,27 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
       case "QRY_TEMP_HUM_RESP":
         // Backend sends payload as array of all temp/hum readings
         if (Array.isArray(suo.payload)) {
-          newRack.temp_hum = suo.payload;
           newRack.tempHum = suo.payload;
         }
         break;
       case "HEARTBEAT":
         newRack.isOnline = true;
-        newRack.lastSeen_hb = new Date().toISOString();
-        newRack.lastSeenHb = newRack.lastSeen_hb;
+        newRack.lastSeenHb = new Date().toISOString();
         break;
       case "RFID_SNAPSHOT":
       case "RFID_EVENT":
-        // Update both snake_case and camelCase field names for consistency
         // RFID_SNAPSHOT: Full array replacement | RFID_EVENT: Single tag update
         if (Array.isArray(suo.payload)) {
           // Full snapshot replacement
-          newRack.rfid_snapshot = suo.payload;
           newRack.rfidSnapshot = suo.payload;
         } else if (suo.payload && typeof suo.payload === 'object') {
           // Single RFID event - merge into existing array
-          const currentRfid = newRack.rfidSnapshot || newRack.rfid_snapshot || [];
+          const currentRfid = newRack.rfidSnapshot || [];
           const updatedRfid = currentRfid.map((tag) =>
             tag.sensorIndex === suo.payload.sensorIndex
               ? { ...tag, ...suo.payload }
               : tag,
           );
-          newRack.rfid_snapshot = updatedRfid;
           newRack.rfidSnapshot = updatedRfid;
         }
         break;
@@ -220,7 +212,6 @@ export const useIoTStore = create<IoTStore>((set, get) => ({
       case "NOISE_LEVEL":
         // Backend sends payload as array of all noise readings
         if (Array.isArray(suo.payload)) {
-          newRack.noise_level = suo.payload;
           newRack.noiseLevel = suo.payload;
         }
         break;

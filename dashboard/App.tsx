@@ -142,15 +142,15 @@ const App: React.FC = () => {
                   </span>
                 </div>
               </div>
-              <RackStrip uTotal={uTotal} rfidData={activeRack.rfidSnapshot || activeRack.rfid_snapshot || []} />
+              <RackStrip uTotal={uTotal} rfidData={activeRack.rfidSnapshot || []} />
             </section>
 
             {/* Zone C: Environment */}
             {!isNocMode && (
               <section className="app-zone-section animate-in fade-in slide-in-from-right duration-500">
                 <EnvList
-                  tempHum={activeRack.tempHum || activeRack.temp_hum || []}
-                  noise={activeRack.noiseLevel || activeRack.noise_level || []}
+                  tempHum={activeRack.tempHum || []}
+                  noise={activeRack.noiseLevel || []}
                 />
               </section>
             )}

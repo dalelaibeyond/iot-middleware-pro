@@ -2,10 +2,10 @@
 
 # IoT Middleware Pro - As-Built Specification
 
-> **Version:** 2.0.0
+> **Version:** 2.1.0
 > 
 > 
-> **Last Updated:** 2026-02-12
+> **Last Updated:** 2026-02-12 (v2.1 - camelCase JSON Standardization)
 > 
 > **Status:** As-Built (Verified against source code)
 > 

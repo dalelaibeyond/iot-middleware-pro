@@ -25,15 +25,13 @@ export const isValidMessageType = (value: string): value is MessageType => {
 
 /**
  * Validates structure of a DeviceMetadata object
- * Supports both camelCase (dashboard) and snake_case (middleware) field names
  */
 export const validateDeviceMetadata = (data: any): data is DeviceMetadata => {
-  // Support both camelCase and snake_case field names
-  const deviceId = data.deviceId || data.device_id;
-  const deviceType = data.deviceType || data.device_type;
-  const ip = data.ip || data.device_ip;
-  const fwVer = data.fwVer || data.device_fwVer;
-  const modules = data.activeModules || data.modules;
+  const deviceId = data.deviceId;
+  const deviceType = data.deviceType;
+  const ip = data.ip;
+  const fwVer = data.fwVer;
+  const modules = data.activeModules;
 
   const hasDeviceId = data && typeof deviceId === "string";
   const hasDeviceType = typeof deviceType === "string";
@@ -67,24 +65,18 @@ export const validateDeviceMetadata = (data: any): data is DeviceMetadata => {
 
 /**
  * Validates structure of a RackState object
- * Supports both camelCase and snake_case field names
  * Note: Makes sensor arrays optional to support partial data from API
  */
 export const validateRackState = (data: any): data is RackState => {
-  // Support both camelCase and snake_case for sensor arrays
-  const rfidSnapshot = data.rfidSnapshot || data.rfid_snapshot;
-  const tempHum = data.tempHum || data.temp_hum;
-  const noiseLevel = data.noiseLevel || data.noise_level;
-
   return (
     data &&
     typeof data.deviceId === "string" &&
     typeof data.moduleIndex === "number" &&
     typeof data.isOnline === "boolean" &&
     // Sensor arrays are optional - if present, must be arrays
-    (rfidSnapshot === undefined || Array.isArray(rfidSnapshot)) &&
-    (tempHum === undefined || Array.isArray(tempHum)) &&
-    (noiseLevel === undefined || Array.isArray(noiseLevel)) &&
+    (data.rfidSnapshot === undefined || Array.isArray(data.rfidSnapshot)) &&
+    (data.tempHum === undefined || Array.isArray(data.tempHum)) &&
+    (data.noiseLevel === undefined || Array.isArray(data.noiseLevel)) &&
     // Door states can be null or undefined
     (data.doorState === undefined || data.doorState === null || typeof data.doorState === "number") &&
     (data.door1State === undefined || data.door1State === null || typeof data.door1State === "number") &&

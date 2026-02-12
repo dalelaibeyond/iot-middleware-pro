@@ -20,17 +20,13 @@ export interface RackState {
   deviceId: string;
   moduleIndex: number;
 
-  // Status - Support both camelCase and snake_case
+  // Status
   isOnline: boolean;
-  lastSeen_hb?: string;
   lastSeenHb?: string;
 
-  // Sensor Data - Support both camelCase and snake_case
-  rfid_snapshot?: RFIDTag[];
+  // Sensor Data
   rfidSnapshot?: RFIDTag[];
-  temp_hum?: TempHum[];
   tempHum?: TempHum[];
-  noise_level?: NoiseLevel[];
   noiseLevel?: NoiseLevel[];
 
   // Doors (0=Closed, 1=Open)

@@ -64,7 +64,7 @@ class StateCache {
         mask: null,
         gwIp: null,
         activeModules: [],
-        lastSeen_info: new Date().toISOString(),
+        lastSeenInfo: new Date().toISOString(),
       };
     }
 
@@ -153,7 +153,7 @@ class StateCache {
     }
 
     // Update timestamp
-    cached.lastSeen_info = new Date().toISOString();
+    cached.lastSeenInfo = new Date().toISOString();
 
     // Save to cache
     this.metadataCache.set(cacheKey, cached);
@@ -198,7 +198,7 @@ class StateCache {
         mask: null,
         gwIp: null,
         activeModules: [],
-        lastSeen_info: new Date().toISOString(),
+        lastSeenInfo: new Date().toISOString(),
       };
     }
 
@@ -264,7 +264,7 @@ class StateCache {
     cached.activeModules = newActiveModules;
 
     // Update timestamp
-    cached.lastSeen_info = new Date().toISOString();
+    cached.lastSeenInfo = new Date().toISOString();
 
     // Save to cache
     this.metadataCache.set(cacheKey, cached);
@@ -342,9 +342,9 @@ class StateCache {
    * Update telemetry field with timestamp
    * @param {string} deviceId - Device ID
    * @param {number} moduleIndex - Module index
-   * @param {string} field - Field name (temp_hum, noise_level, rfid_snapshot, doorState)
+   * @param {string} field - Field name (tempHum, noiseLevel, rfidSnapshot, doorState)
    * @param {*} value - Field value
-   * @param {string} timestampField - Timestamp field name (lastSeen_th, lastSeen_ns, etc.)
+   * @param {string} timestampField - Timestamp field name (lastSeenTh, lastSeenNs, etc.)
    */
   updateTelemetryField(deviceId, moduleIndex, field, value, timestampField) {
     const cacheKey = `device:${deviceId}:module:${moduleIndex}`;
@@ -357,17 +357,17 @@ class StateCache {
         moduleIndex,
         moduleId: null,
         isOnline: false,
-        lastSeen_hb: null,
-        temp_hum: [],
-        lastSeen_th: null,
-        noise_level: [],
-        lastSeen_ns: null,
-        rfid_snapshot: [],
-        lastSeen_rfid: null,
+        lastSeenHb: null,
+        tempHum: [],
+        lastSeenTh: null,
+        noiseLevel: [],
+        lastSeenNs: null,
+        rfidSnapshot: [],
+        lastSeenRfid: null,
         doorState: null,
         door1State: null,
         door2State: null,
-        lastSeen_door: null,
+        lastSeenDoor: null,
       };
     }
 
@@ -385,7 +385,7 @@ class StateCache {
    */
   getRfidSnapshot(deviceId, moduleIndex) {
     const telemetry = this.getTelemetry(deviceId, moduleIndex);
-    return telemetry ? telemetry.rfid_snapshot || [] : [];
+    return telemetry ? telemetry.rfidSnapshot || [] : [];
   }
 
   /**
@@ -406,21 +406,21 @@ class StateCache {
         moduleIndex,
         moduleId,
         isOnline: true,
-        lastSeen_hb: new Date().toISOString(),
-        temp_hum: [],
-        lastSeen_th: null,
-        noise_level: [],
-        lastSeen_ns: null,
-        rfid_snapshot: [],
-        lastSeen_rfid: null,
+        lastSeenHb: new Date().toISOString(),
+        tempHum: [],
+        lastSeenTh: null,
+        noiseLevel: [],
+        lastSeenNs: null,
+        rfidSnapshot: [],
+        lastSeenRfid: null,
         doorState: null,
         door1State: null,
         door2State: null,
-        lastSeen_door: null,
+        lastSeenDoor: null,
       };
     } else {
       telemetry.isOnline = true;
-      telemetry.lastSeen_hb = new Date().toISOString();
+      telemetry.lastSeenHb = new Date().toISOString();
       if (moduleId) telemetry.moduleId = moduleId;
       if (uTotal !== undefined) telemetry.uTotal = uTotal;
     }

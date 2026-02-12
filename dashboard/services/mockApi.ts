@@ -40,19 +40,19 @@ export const mockApi = {
       deviceId,
       moduleIndex,
       isOnline: device?.isOnline || false,
-      lastSeen_hb: new Date().toISOString(),
-      rfid_snapshot: Array.from({ length: 5 }, (_, i) => ({
+      lastSeenHb: new Date().toISOString(),
+      rfidSnapshot: Array.from({ length: 5 }, (_, i) => ({
         sensorIndex: i * 5 + 2,
         tagId: `TAG-${Math.random().toString(36).substring(7).toUpperCase()}`,
         isAlarm: Math.random() > 0.9
       })),
       // Updated to generate 6 zones as requested
-      temp_hum: Array.from({ length: 6 }, (_, i) => ({
+      tempHum: Array.from({ length: 6 }, (_, i) => ({
         sensorIndex: i,
         temp: 22 + Math.random() * 5,
         hum: 45 + Math.random() * 10
       })),
-      noise_level: [
+      noiseLevel: [
         { sensorIndex: 0, noise: 45 + Math.random() * 20 }
       ],
       doorState: device?.deviceType === 'V5008-Edge' ? 0 : null,

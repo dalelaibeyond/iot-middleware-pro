@@ -11,7 +11,8 @@ class WebSocketServer {
   constructor() {
     this.config = null;
     this.server = null;
-    this.clients = new Set();
+    this.clients = new Map(); // ws -> { id, ip, connectedAt }
+    this.nextClientId = 1;
   }
 
   /**
@@ -29,6 +30,12 @@ class WebSocketServer {
    * @returns {Promise<void>}
    */
   async start() {
+    // Guard against multiple starts
+    if (this.server) {
+      console.warn("  WebSocketServer already started, skipping...");
+      return;
+    }
+
     const port = this.config.port || 3001;
 
     this.server = new WebSocket.Server({ port });
@@ -42,7 +49,7 @@ class WebSocketServer {
       eventBus.emitError(error, "WebSocketServer");
     });
 
-    // Subscribe to normalized data
+    // Subscribe to normalized data (only once)
     eventBus.onDataNormalized((suo) => {
       this.broadcast(suo);
     });
@@ -57,9 +64,12 @@ class WebSocketServer {
    */
   handleConnection(ws, req) {
     const clientIp = req.socket.remoteAddress;
-    console.log(`WebSocket client connected: ${clientIp}`);
+    const clientId = `client-${this.nextClientId++}`;
+    const clientInfo = { id: clientId, ip: clientIp, connectedAt: new Date() };
+    
+    console.log(`[WebSocket] ${clientId} connected from ${clientIp}`);
 
-    this.clients.add(ws);
+    this.clients.set(ws, clientInfo);
 
     // Send welcome message
     this.send(ws, {
@@ -75,7 +85,7 @@ class WebSocketServer {
 
     // Handle disconnection
     ws.on("close", () => {
-      console.log(`WebSocket client disconnected: ${clientIp}`);
+      console.log(`[WebSocket] ${clientId} disconnected from ${clientIp}`);
       this.clients.delete(ws);
     });
 
@@ -136,23 +146,25 @@ class WebSocketServer {
     };
 
     const payload = JSON.stringify(message);
+    const clientIds = [];
 
     // Send to all connected clients
-    this.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
+    this.clients.forEach((clientInfo, ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
         try {
-          client.send(payload);
-
-          //TEMP-LOG
-          console.log("Sent to WebSocket client:", suo);
-
-
+          ws.send(payload);
+          clientIds.push(clientInfo.id);
         } catch (error) {
-          console.error("Failed to send to WebSocket client:", error.message);
-          this.clients.delete(client);
+          console.error(`[WebSocket] Failed to send to ${clientInfo.id}:`, error.message);
+          this.clients.delete(ws);
         }
       }
     });
+
+    //TEMP-LOG: Log once per broadcast with client IDs
+    if (clientIds.length > 0) {
+      console.log(`[WebSocket] Broadcast ${suo.messageType} (msgId: ${suo.messageId}) to: [${clientIds.join(", ")}]`);
+    }
   }
 
   /**
@@ -186,9 +198,10 @@ class WebSocketServer {
     console.log("  Stopping WebSocketServer...");
 
     // Close all client connections
-    this.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.close();
+    this.clients.forEach((clientInfo, ws) => {
+      console.log(`[WebSocket] Closing ${clientInfo.id}`);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
       }
     });
     this.clients.clear();
