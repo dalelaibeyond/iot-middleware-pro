@@ -1,8 +1,14 @@
+# middleware_spec
+
 # IoT Middleware Pro - As-Built Specification
 
-> **Version:** 2.0.0  
-> **Last Updated:** 2026-02-11  
+> **Version:** 2.0.0
+> 
+> 
+> **Last Updated:** 2026-02-12
+> 
 > **Status:** As-Built (Verified against source code)
+> 
 
 ---
 
@@ -34,15 +40,16 @@ The IoT Middleware Pro is a **headless, modular integration layer** that unifies
 
 ### 1.2 Module Initialization Order
 
-```javascript
-database → eventBus → stateCache → mqttSubscriber → parserManager → 
+```jsx
+database → eventBus → stateCache → mqttSubscriber → parserManager →
 normalizer → storage → command → apiServer → webSocketServer → cacheWatchdog
 ```
 
 ### 1.3 Data Contracts
 
 **SIF (Standard Intermediate Format)** - Output of Parsers:
-```javascript
+
+```jsx
 {
   deviceType: "V5008|V6800",
   deviceId: "string",
@@ -56,7 +63,8 @@ normalizer → storage → command → apiServer → webSocketServer → cacheWa
 ```
 
 **SUO (Standard Unified Object)** - Output of Normalizer:
-```javascript
+
+```jsx
 {
   deviceId: "string",
   deviceType: "V5008|V6800",
@@ -99,11 +107,12 @@ Location: `config/default.json`
 ### 3.1 Group S: System API
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | `GET` | `/api/health` | System status (DB, MQTT, memory usage) |
 | `GET` | `/api/config` | System config (passwords redacted) |
 
 **Health Response:**
+
 ```json
 {
   "status": "ok",
@@ -117,12 +126,13 @@ Location: `config/default.json`
 ### 3.2 Group A: Management API (Hot Path)
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | `GET` | `/api/live/topology` | List all devices & modules (DB + Cache merge) |
 | `GET` | `/api/live/devices/:deviceId/modules/:moduleIndex` | Get module state from StateCache |
 | `POST` | `/api/commands` | Submit control command (returns 202 Accepted) |
 
 **Command Request:**
+
 ```json
 POST /api/commands
 {
@@ -138,6 +148,7 @@ POST /api/commands
 ```
 
 **Command Response:**
+
 ```json
 { "status": "sent", "commandId": "cmd_1707654321_abc123" }
 ```
@@ -145,7 +156,7 @@ POST /api/commands
 ### 3.3 Group E: History API (Cold Path - requires storage)
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | `GET` | `/api/history/events` | RFID/Door events with pagination |
 | `GET` | `/api/history/telemetry` | Temp/Hum/Noise with time range |
 | `GET` | `/api/history/audit` | Config change audit log |
@@ -157,7 +168,7 @@ POST /api/commands
 
 ### 4.1 Command Request Format
 
-```javascript
+```jsx
 {
   deviceId: "string",
   deviceType: "V5008|V6800",
@@ -173,8 +184,8 @@ POST /api/commands
 ### 4.2 Supported Commands
 
 | Command | V5008 | V6800 | Required Params |
-|---------|-------|-------|-----------------|
-| `QRY_RFID_SNAPSHOT` | ✓ | ✓ | `moduleIndex` |
+| --- | --- | --- | --- |
+| `QRY_RFID_SNAPSHOT` | ✓ | ✓ | `moduleIndex` (V5008), `moduleIndex` + `moduleId` (V6800) |
 | `QRY_TEMP_HUM` | ✓ | ✓ | `moduleIndex` |
 | `QRY_DOOR_STATE` | ✓ | ✓ | `moduleIndex` |
 | `QRY_NOISE_LEVEL` | ✓ | ✗ | `moduleIndex` |
@@ -188,7 +199,7 @@ POST /api/commands
 ### 4.3 V5008 Binary Command Format
 
 | Command | Hex Structure |
-|---------|---------------|
+| --- | --- |
 | `QRY_RFID_SNAPSHOT` | `0xE9, 0x01, moduleIndex` |
 | `QRY_TEMP_HUM` | `0xE9, 0x02, moduleIndex` |
 | `QRY_DOOR_STATE` | `0xE9, 0x03, moduleIndex` |
@@ -202,6 +213,7 @@ POST /api/commands
 ### 4.4 V6800 JSON Command Format
 
 **SET_COLOR:**
+
 ```json
 {
   "msg_type": "set_module_property_req",
@@ -217,6 +229,7 @@ POST /api/commands
 ```
 
 **CLN_ALARM:**
+
 ```json
 {
   "msg_type": "clear_u_warning",
@@ -225,6 +238,22 @@ POST /api/commands
   "data": [{"index": "{moduleIndex}", "warning_data": ["{sensorIndex}"]}]
 }
 ```
+
+**QRY_RFID_SNAPSHOT (V6800):**
+
+```json
+{
+  "msg_type": "u_state_req",
+  "gateway_sn": "{deviceId}",
+  "data": [{
+    "host_gateway_port_index": "{moduleIndex}",
+    "extend_module_sn": "{moduleId}",
+    "u_index_list": null
+  }]
+}
+```
+
+**Note:** V6800 requires `moduleId` (mapped to `extend_module_sn`), while V5008 only needs `moduleIndex`.
 
 ---
 
@@ -321,7 +350,7 @@ CREATE TABLE iot_topchange_event (
 ## 6. Storage Service Routing
 
 | SUO Type | Target Table | Logic |
-|----------|--------------|-------|
+| --- | --- | --- |
 | `HEARTBEAT` | `iot_heartbeat` | Store payload as JSON |
 | `RFID_SNAPSHOT` | `iot_rfid_snapshot` | Store payload as JSON |
 | `RFID_EVENT` | `iot_rfid_event` | Insert 1 row per payload item |
@@ -330,7 +359,7 @@ CREATE TABLE iot_topchange_event (
 | `DOOR_STATE` | `iot_door_event` | Map doorState/door1State/door2State |
 | `DEVICE_METADATA` | `iot_meta_data` | UPSERT on device_id |
 | `META_CHANGED_EVENT` | `iot_topchange_event` | Insert per description |
-| `QRY_CLR_RESP` | `iot_cmd_result` | Map colorMap to color_map JSON |
+| `QRY_CLR_RESP` | `iot_cmd_result` | Map colorMap to `iot_cmd_result.color_map` JSON column |
 
 ---
 
@@ -350,7 +379,7 @@ CREATE TABLE iot_topchange_event (
 ## 8. Source Code Locations
 
 | Component | Path |
-|-----------|------|
+| --- | --- |
 | EventBus | `src/core/EventBus.js` |
 | Database | `src/core/Database.js` |
 | ModuleManager | `src/core/ModuleManager.js` |

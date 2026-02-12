@@ -1,16 +1,23 @@
+# dashboard_spec
+
 # Dashboard Specification - As-Built
 
-> **Component:** IoT Ops Dashboard (React/Vite Frontend)  
-> **Version:** 2.0.0  
-> **Last Updated:** 2026-02-11  
+> **Component:** IoT Ops Dashboard (React/Vite Frontend)
+> 
+> 
+> **Version:** 2.0.0
+> 
+> **Last Updated:** 2026-02-12
+> 
 > **Status:** As-Built (Verified against source code)
+> 
 
 ---
 
 ## 1. Technology Stack
 
 | Component | Technology |
-|-----------|------------|
+| --- | --- |
 | Framework | React 18+ |
 | Language | TypeScript |
 | Build Tool | Vite |
@@ -85,11 +92,11 @@ dashboard/
 
 - **Data Source:** `GET /api/live/topology` (initial) + WebSocket (updates)
 - **Visual:** Accordion list
-  - **Level 1:** Device ID with Online/Offline dot (Green = Online, Gray = Offline)
-  - **Level 2:** Module ID (Rack)
+    - **Level 1:** Device ID with Online/Offline dot (Green = Online, Gray = Offline)
+    - **Level 2:** Module ID (Rack)
 - **Real-Time Behavior:**
-  - `DEVICE_METADATA` arrives → Update Device Label/IP
-  - `HEARTBEAT` arrives → Update Online/Offline dot immediately
+    - `DEVICE_METADATA` arrives → Update Device Label/IP
+    - `HEARTBEAT` arrives → Update Online/Offline dot immediately
 
 ### 3.3 Top Bar (Context)
 
@@ -103,17 +110,17 @@ dashboard/
 - Single Door: 1 Icon
 - Dual Door (V6800): 2 Icons (Front/Rear)
 - **States:**
-  - Closed: Green Outline / Gray Fill
-  - Open: Red Solid Fill + Pulsing Animation
+- Closed: Green Outline / Gray Fill
+- Open: Red Solid Fill + Pulsing Animation
 
 **Zone B: Rack Visualizer (Center, ~50%)**
 - Vertical stack of slots representing physical rack
 - Dynamic height based on `uTotal` (default 42)
 - **Ordering:** Physical Standard (U1 at Bottom, U-Max at Top)
 - **Slots:**
-  - Empty: Gray placeholder
-  - Occupied: Colored block with Tag ID
-  - Alarm: Blinking Red background
+- Empty: Gray placeholder
+- Occupied: Colored block with Tag ID
+- Alarm: Blinking Red background
 
 **Zone C: Environment (Right, ~30%)**
 - Card-based list aligned with rack
@@ -128,7 +135,7 @@ dashboard/
 
 ### 4.1 State Structure
 
-```typescript
+```tsx
 interface IoTStore {
   deviceList: DeviceMetadata[];        // Sidebar source
   activeRack: RackState | null;        // Main panel source
@@ -142,7 +149,7 @@ interface IoTStore {
 ### 4.2 Actions
 
 | Action | Description |
-|--------|-------------|
+| --- | --- |
 | `setDeviceList(devices)` | Initialize/update device list |
 | `setActiveSelection(deviceId, moduleIndex)` | Change selected rack |
 | `setActiveRack(rack)` | Set current rack state |
@@ -162,11 +169,11 @@ The `mergeUpdate(suo)` function handles two branches:
 **Branch 2: Rack Update (Context-Aware)**
 - **Guard:** Only process if `suo.deviceId === activeDeviceId` AND `suo.moduleIndex === activeModuleIndex`
 - **Updates:**
-  - `TEMP_HUM` → Update tempHum array
-  - `HEARTBEAT` → Update isOnline
-  - `RFID_SNAPSHOT/RFID_EVENT` → Update rfidSnapshot
-  - `DOOR_STATE` → Update door*State fields
-  - `NOISE_LEVEL` → Update noiseLevel array
+- `TEMP_HUM` → Update tempHum array
+- `HEARTBEAT` → Update isOnline
+- `RFID_SNAPSHOT/RFID_EVENT` → Update rfidSnapshot
+- `DOOR_STATE` → Update door*State fields
+- `NOISE_LEVEL` → Update noiseLevel array
 
 ---
 
@@ -176,7 +183,7 @@ The `mergeUpdate(suo)` function handles two branches:
 
 **File:** `src/api/client.ts`
 
-```typescript
+```tsx
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:3000",
   timeout: 10000,
@@ -189,7 +196,7 @@ const apiClient = axios.create({
 **File:** `src/api/endpoints.ts`
 
 | Function | Endpoint | Description |
-|----------|----------|-------------|
+| --- | --- | --- |
 | `getTopology()` | `GET /api/live/topology` | Device/module list |
 | `getRackState(deviceId, moduleIndex)` | `GET /api/live/devices/{id}/modules/{idx}` | Rack state |
 | `sendCommand(deviceId, deviceType, messageType, payload)` | `POST /api/commands` | Send command |
@@ -198,20 +205,7 @@ const apiClient = axios.create({
 | `getHistoryTelemetry(params)` | `GET /api/history/telemetry` | Historical telemetry |
 | `getHistoryAudit(params)` | `GET /api/history/audit` | Audit log |
 
-### 5.3 Field Name Mapping
 
-The API uses snake_case, but the dashboard uses camelCase:
-
-| API (snake_case) | Dashboard (camelCase) |
-|------------------|----------------------|
-| `device_id` | `deviceId` |
-| `device_type` | `deviceType` |
-| `rfid_snapshot` | `rfidSnapshot` |
-| `temp_hum` | `tempHum` |
-| `noise_level` | `noiseLevel` |
-| `last_seen_hb` | `lastSeenHb` |
-
----
 
 ## 6. WebSocket Integration
 
@@ -220,7 +214,8 @@ The API uses snake_case, but the dashboard uses camelCase:
 **File:** `hooks/useSocket.ts`
 
 **Configuration:**
-```typescript
+
+```tsx
 const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
 const maxReconnectAttempts = 5;
 const reconnectDelay = 2000; // Base delay, doubles each attempt
@@ -232,6 +227,7 @@ const reconnectDelay = 2000; // Base delay, doubles each attempt
 - Manual disconnect (code 1000) does not trigger reconnect
 
 **Message Flow:**
+
 ```
 WebSocket Message → validateWebSocketMessage() → mergeUpdate(suo)
 ```
@@ -239,7 +235,7 @@ WebSocket Message → validateWebSocketMessage() → mergeUpdate(suo)
 ### 6.2 SUO Update Types
 
 | messageType | State Update |
-|-------------|--------------|
+| --- | --- |
 | `TEMP_HUM` | `activeRack.tempHum = payload` |
 | `HEARTBEAT` | `activeRack.isOnline = true`, update timestamp |
 | `RFID_SNAPSHOT` | `activeRack.rfidSnapshot = payload` |
@@ -257,7 +253,7 @@ WebSocket Message → validateWebSocketMessage() → mergeUpdate(suo)
 
 **File:** `types/schema.ts`
 
-```typescript
+```tsx
 interface DeviceMetadata {
   deviceId: string;
   deviceType: string;
@@ -354,18 +350,20 @@ npm run preview
 
 ## 10. Key Implementation Notes
 
-### 10.1 "Zero Module" Case Handling
+### 10.1 “Zero Module” Case Handling
 
 The dashboard handles devices with no modules:
 - Initialization: Check if `activeModules.length > 0` before selecting
 - Auto-correction: If selected module removed, switch to first available
 
-### 10.2 Field Name Compatibility
+### 10.2 Field Name Convention
 
-The store maintains both snake_case and camelCase versions:
-```typescript
-newRack.temp_hum = suo.payload;  // API format
-newRack.tempHum = suo.payload;   // Dashboard format
+The API and dashboard both use camelCase for all JSON field names:
+
+```tsx
+newRack.tempHum = suo.payload;   // camelCase format
+newRack.rfidSnapshot = suo.payload;
+newRack.noiseLevel = suo.payload;
 ```
 
 ### 10.3 NOC Mode
@@ -379,4 +377,4 @@ NOC (Network Operations Center) mode:
 
 - Initial load: Skeleton loaders shown
 - Data stale (> 2 min): Visual indicator
-- API error: "Rack Offline or Not Found" empty state
+- API error: “Rack Offline or Not Found” empty state

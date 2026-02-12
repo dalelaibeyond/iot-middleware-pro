@@ -11,9 +11,10 @@ This project maintains **As-Built Specifications** in the `docs/` folder. These 
 | Document | Description |
 |----------|-------------|
 | [docs/middleware_spec.md](docs/middleware_spec.md) | Architecture, API specification, Command Service, Database Schema |
+| [docs/message_map_spec.md](docs/message_map_spec.md) | Field transformations: RAW → SIF → SUO → DB |
 | [docs/normalizer_spec.md](docs/normalizer_spec.md) | UnifyNormalizer, SmartHeartbeat, CacheWatchdog logic |
-| [docs/v5008_parser_spec.md](docs/v5008_parser_spec.md) | V5008 Binary Parser specification |
-| [docs/v6800_parser_spec.md](docs/v6800_parser_spec.md) | V6800 JSON Parser specification |
+| [docs/v5008_parser_spec.md](docs/v5008_parser_spec.md) | V5008 Binary Parser (quick reference) |
+| [docs/v6800_parser_spec.md](docs/v6800_parser_spec.md) | V6800 JSON Parser (quick reference) |
 | [docs/dashboard_spec.md](docs/dashboard_spec.md) | React Dashboard frontend specification |
 
 ---
@@ -222,6 +223,7 @@ iot-middleware-pro/
 │   └── schema.sql                # MySQL schema
 ├── docs/                         # As-Built Specifications
 │   ├── middleware_spec.md
+│   ├── message_map_spec.md
 │   ├── normalizer_spec.md
 │   ├── v5008_parser_spec.md
 │   ├── v6800_parser_spec.md

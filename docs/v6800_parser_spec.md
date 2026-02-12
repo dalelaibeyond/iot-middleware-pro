@@ -1,54 +1,37 @@
+# v6800_parser_spec
+
 # V6800 Parser Specification - As-Built
 
-> **Component:** V6800Parser  
-> **Version:** 1.0  
-> **Last Updated:** 2026-02-11  
+> **Component:** V6800Parser (JSON Protocol)
+> 
+> 
+> **Version:** 2.0.0
+> 
+> **Last Updated:** 2026-02-12
+> 
 > **Status:** As-Built (Verified against source code)
+> 
 
 ---
 
 ## 1. Component Overview
 
-- **Class Name:** `V6800Parser`
-- **Input:** `(topic: string, message: string | object)`
-- **Output:** `SIF Object` or `null`
-- **Error Handling:**
-  - Parse JSON safely with `try-catch`
-  - Unknown `msg_type`: Set `messageType = "UNKNOWN"`, preserve raw payload
-  - Parse fails: Log error, return `null`
+| Item | Value |
+| --- | --- |
+| **Class** | `V6800Parser` |
+| **Input** | `(topic: string, message: string \| object)` |
+| **Output** | `SIF Object` or `null` |
+| **Source** | `src/modules/parsers/V6800Parser.js` |
+| **Error Handling** | Log errors, return `null`. Unknown `msg_type` sets `messageType = "UNKNOWN"`. |
 
-**Source File:** `src/modules/parsers/V6800Parser.js`
-
----
-
-## 2. SIF Standard Contract
-
-Every SIF object returned by the parser **MUST** contain:
-
-```javascript
-{
-  deviceType: "V6800",
-  deviceId: "string",
-  messageType: "HEARTBEAT|RFID_SNAPSHOT|...",
-  messageId: "string",
-  meta: {
-    topic: "string",
-    rawType: "string"    // Original msg_type from JSON
-  },
-  // Plus message-specific fields
-}
-```
-
-**Topology Context (for sensor data):**
-- `moduleIndex`: Number
-- `moduleId`: String (if available)
+**See Also:** [message_map_spec.md](message_map_spec.md) for complete RAW → SIF → SUO transformations.
 
 ---
 
-## 3. Message Type Mapping
+## 2. Message Type Mapping
 
 | Raw `msg_type` | SIF `messageType` | Trigger |
-|----------------|-------------------|---------|
+| --- | --- | --- |
 | `heart_beat_req` | `HEARTBEAT` | Periodic (60s) |
 | `u_state_resp` | `RFID_SNAPSHOT` | Query response |
 | `u_state_changed_notify_req` | `RFID_EVENT` | Tag attach/detach event |
@@ -57,27 +40,17 @@ Every SIF object returned by the parser **MUST** contain:
 | `door_state_changed_notify_req` | `DOOR_STATE` | Door change event |
 | `door_state_resp` | `QRY_DOOR_STATE_RESP` | Query response |
 | `devies_init_req` | `DEV_MOD_INFO` | Boot/Query response |
+| `devices_changed_req` | `UTOTAL_CHANGED` | Config change event |
 | `u_color` | `QRY_CLR_RESP` | Query response |
 | `set_module_property_result_req` | `SET_CLR_RESP` | Set response |
 | `clear_u_warning` | `CLN_ALM_RESP` | Clear alarm response |
-| `devices_changed_req` | `UTOTAL_CHANGED` | Config change event |
 
 ---
 
-## 4. Field Mapping Logic
+## 3. Field Mapping
 
-### 4.1 Common Fields (Root Level)
+### 3.1 Device ID Extraction Priority
 
-| Raw Field | SIF Key | Data Type | Notes |
-|-----------|---------|-----------|-------|
-| `gateway_sn` | `deviceId` | String | Primary device ID |
-| `module_sn` | `deviceId` | String | Only for `heart_beat_req` with `module_type="mt_gw"` |
-| `msg_type` | `meta.rawType` | String | Original message type |
-| `uuid_number` | `messageId` | String | Cast Number to String |
-| `gateway_ip` | `ip` | String | Device IP address |
-| `gateway_mac` | `mac` | String | Device MAC address |
-
-**Device ID Extraction Priority:**
 1. Special case: `heart_beat_req` + `module_type="mt_gw"` → use `module_sn`
 2. `gateway_sn`
 3. `gateway_id`
@@ -85,381 +58,194 @@ Every SIF object returned by the parser **MUST** contain:
 5. `dev_id`
 6. `sn`
 
-### 4.2 Module & Sensor Array Mapping
+### 3.2 Common Fields (Root Level)
 
-| Context | Raw Field | SIF Key | Transformation |
-|---------|-----------|---------|----------------|
-| **Module** | `module_index` | `moduleIndex` | Integer |
-| **Module** | `host_gateway_port_index` | `moduleIndex` | Integer (Alias) |
-| **Module** | `module_sn` | `moduleId` | String |
-| **Module** | `extend_module_sn` | `moduleId` | String (Alias) |
-| **Module** | `module_u_num` | `uTotal` | Integer |
-| **Module** | `module_sw_version` | `fwVer` | String |
-| **RFID** | `u_index` | `uIndex` | Integer |
-| **RFID** | `tag_code` | `tagId` | String (filter null/empty) |
-| **RFID** | `warning` | `isAlarm` | Boolean (0=false, 1=true) |
-| **RFID** | `new_state` / `old_state` | `action` | `1/0`→"ATTACHED", `0/1`→"DETACHED" |
-| **Env** | `temper_position` | `thIndex` | Integer |
-| **Env** | `temper_swot` | `temp` | Number (0→null) |
-| **Env** | `hygrometer_swot` | `hum` | Number (0→null) |
-| **Color** | `color` | `colorName` | String |
-| **Color** | `code` | `colorCode` | Integer |
+| Raw Field | SIF Key | Notes |
+| --- | --- | --- |
+| `msg_type` | `meta.rawType` | Original message type preserved |
+| `uuid_number` | `messageId` | Cast Number to String |
+| `gateway_ip` | `ip` | Device IP address |
+| `gateway_mac` | `mac` | Device MAC address |
 
-### 4.3 Door State Logic
+### 3.3 Module & Sensor Fields
 
-V6800 supports both Single and Dual door sensors:
+| SIF Key | Primary Field | Alias Fields |
+| --- | --- | --- |
+| `moduleIndex` | `module_index` | `host_gateway_port_index`, `index` |
+| `moduleId` | `module_sn` | `extend_module_sn`, `module_id` |
+| `uTotal` | `module_u_num` | - |
+| `fwVer` | `module_sw_version` | - |
+| `uIndex` | `u_index` | - |
+| `tagId` | `tag_code` | Filter null/empty |
+| `isAlarm` | `warning` | `0`→false, `1`→true |
+| `action` | - | Derived from `new_state`/`old_state` |
+| `thIndex` | `temper_position` | - |
+| `temp` | `temper_swot` | `0`→null |
+| `hum` | `hygrometer_swot` | `0`→null |
+| `colorName` | `color` | - |
+| `colorCode` | `code` | - |
 
-**Single Door:**
-- Raw has `new_state` → Map to `doorState`
+### 3.4 RFID Action Derivation
 
-**Dual Door:**
-- Raw has `new_state1` / `new_state2` → Map to `door1State` / `door2State`
+| `new_state` | `old_state` | `action` |
+| --- | --- | --- |
+| 1 | 0 | `ATTACHED` |
+| 0 | 1 | `DETACHED` |
+
+### 3.5 Door State Mapping
+
+- **Single Door:** `new_state` → `doorState`
+- **Dual Door:** `new_state1` / `new_state2` → `door1State` / `door2State`
 
 ---
 
-## 5. Message Format Details
+## 4. Message Quick Reference
 
-### 5.1 HEARTBEAT
+### 4.1 HEARTBEAT
 
-**Raw JSON:**
 ```json
 {
   "msg_type": "heart_beat_req",
   "gateway_sn": "2105101125",
   "uuid_number": 755052881,
-  "data": [
-    {
-      "module_index": 4,
-      "module_sn": "3468672873",
-      "module_u_num": 12
-    }
-  ]
+  "data": [{"module_index": 4, "module_sn": "3468672873", "module_u_num": 12}]
 }
 ```
 
-**SIF Output:**
-```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "HEARTBEAT",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "heart_beat_req" },
-  "data": [
-    { "moduleIndex": 4, "moduleId": "3468672873", "uTotal": 12 }
-  ]
-}
-```
+**Key Fields:** `gateway_sn` → deviceId, `uuid_number` → messageId, `data[]` → modules
 
-### 5.2 RFID_SNAPSHOT
+### 4.2 RFID_SNAPSHOT
 
-**Raw JSON:**
 ```json
 {
   "msg_type": "u_state_resp",
   "gateway_sn": "2105101125",
-  "uuid_number": 755052881,
-  "data": [
-    {
-      "module_index": 1,
-      "extend_module_sn": "0304555999",
-      "data": [
-        { "u_index": 3, "tag_code": "21B03311", "warning": 0 }
-      ]
-    }
-  ]
+  "data": [{"module_index": 1, "extend_module_sn": "...", "data": [{"u_index": 3, "tag_code": "...", "warning": 0}]}]
 }
 ```
 
-**SIF Output:**
-```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "RFID_SNAPSHOT",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "u_state_resp" },
-  "moduleIndex": 1,
-  "moduleId": "0304555999",
-  "data": [
-    {
-      "moduleIndex": 1,
-      "moduleId": "0304555999",
-      "data": [
-        { "uIndex": 3, "tagId": "21B03311", "isAlarm": false }
-      ]
-    }
-  ]
-}
-```
+**Note:** Filters items with null/empty `tag_code`.
 
-### 5.3 RFID_EVENT
+### 4.3 RFID_EVENT
 
-**Raw JSON:**
 ```json
 {
   "msg_type": "u_state_changed_notify_req",
   "gateway_sn": "2105101125",
-  "data": [
-    {
-      "host_gateway_port_index": 4,
-      "extend_module_sn": "3468672873",
-      "data": [
-        {
-          "u_index": 11,
-          "tag_code": "21AF16B1",
-          "new_state": 0,
-          "old_state": 1,
-          "warning": 0
-        }
-      ]
-    }
-  ]
+  "data": [{"host_gateway_port_index": 4, "data": [{"u_index": 11, "tag_code": "...", "new_state": 0, "old_state": 1, "warning": 0}]}]
 }
 ```
 
-**SIF Output:**
-```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "RFID_EVENT",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "u_state_changed_notify_req" },
-  "moduleIndex": 4,
-  "moduleId": "3468672873",
-  "data": [
-    {
-      "moduleIndex": 4,
-      "moduleId": "3468672873",
-      "data": [
-        {
-          "uIndex": 11,
-          "tagId": "21AF16B1",
-          "isAlarm": false,
-          "action": "DETACHED"
-        }
-      ]
-    }
-  ]
-}
-```
+**Note:** `new_state`/`old_state` derive `action` (ATTACHED/DETACHED).
 
-### 5.4 TEMP_HUM
+### 4.4 TEMP_HUM
 
-**Raw JSON:**
 ```json
 {
   "msg_type": "temper_humidity_exception_nofity_req",
   "gateway_sn": "2105101125",
-  "data": [
-    {
-      "module_index": 1,
-      "extend_module_sn": "1616797188",
-      "data": [
-        { "temper_position": 10, "temper_swot": 32.1, "hygrometer_swot": 51.1 }
-      ]
-    }
-  ]
+  "data": [{"module_index": 1, "data": [{"temper_position": 10, "temper_swot": 32.1, "hygrometer_swot": 51.1}]}]
 }
 ```
 
-**SIF Output:**
-```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "TEMP_HUM",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "temper_humidity_exception_nofity_req" },
-  "moduleIndex": 1,
-  "moduleId": "1616797188",
-  "data": [
-    {
-      "moduleIndex": 1,
-      "moduleId": "1616797188",
-      "data": [
-        { "thIndex": 10, "temp": 32.1, "hum": 51.1 }
-      ]
-    }
-  ]
-}
-```
+**Note:** Values of `0` converted to `null`.
 
-### 5.5 DOOR_STATE
+### 4.5 DOOR_STATE
 
 **Single Door:**
+
 ```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "DOOR_STATE",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "door_state_changed_notify_req" },
-  "data": [
-    { "moduleIndex": 1, "moduleId": "0304555999", "doorState": 1 }
-  ]
-}
+{"new_state": 1}
 ```
 
 **Dual Door:**
+
+```json
+{"new_state1": 1, "new_state2": 0}
+```
+
+### 4.6 DEV_MOD_INFO
+
 ```json
 {
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "DOOR_STATE",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "door_state_changed_notify_req" },
-  "data": [
-    { "moduleIndex": 1, "moduleId": "0304555999", "door1State": 1, "door2State": 1 }
-  ]
+  "msg_type": "devies_init_req",
+  "gateway_sn": "2105101125",
+  "gateway_ip": "192.168.100.100",
+  "gateway_mac": "08:80:7D:79:4B:45",
+  "data": [{"module_index": 4, "module_sn": "...", "module_sw_version": "...", "module_u_num": 6}]
 }
 ```
 
-### 5.6 DEV_MOD_INFO
+### 4.7 UTOTAL_CHANGED
 
 ```json
 {
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "DEV_MOD_INFO",
-  "messageId": "1528492292",
-  "meta": { "topic": "...", "rawType": "devies_init_req" },
-  "ip": "192.168.100.100",
-  "mac": "08:80:7D:79:4B:45",
-  "data": [
-    { "moduleIndex": 4, "fwVer": "2209191506", "moduleId": "3468672873", "uTotal": 12 }
-  ]
+  "msg_type": "devices_changed_req",
+  "gateway_sn": "2105101125",
+  "data": [{"module_index": 4, "module_sn": "...", "module_u_num": 12}]
 }
 ```
 
-### 5.7 UTOTAL_CHANGED
+### 4.8 Command Responses
+
+**QRY_CLR_RESP:**
 
 ```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "UTOTAL_CHANGED",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "devices_changed_req" },
-  "data": [
-    { "moduleIndex": 4, "moduleId": "3468672873", "uTotal": 12, "fwVer": "2209191506" }
-  ]
-}
+{"msg_type": "u_color", "data": [{"data": [{"u_index": 1, "color": "red", "code": 1}]}]}
 ```
 
-### 5.8 QRY_CLR_RESP
+**SET_CLR_RESP:**
 
 ```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "QRY_CLR_RESP",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "u_color" },
-  "data": [
-    {
-      "moduleIndex": 3,
-      "moduleId": "3468672873",
-      "uTotal": 12,
-      "data": [
-        { "uIndex": 1, "colorName": "red", "colorCode": 1 }
-      ]
-    }
-  ]
-}
+{"msg_type": "set_module_property_result_req", "data": [{"result": "success"}]}
 ```
 
-### 5.9 SET_CLR_RESP
+**CLN_ALM_RESP:**
 
 ```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "SET_CLR_RESP",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "set_module_property_result_req" },
-  "data": [
-    { "moduleIndex": 2, "moduleId": "3468672873", "result": "success" }
-  ]
-}
-```
-
-### 5.10 CLN_ALM_RESP
-
-```json
-{
-  "deviceType": "V6800",
-  "deviceId": "2105101125",
-  "messageType": "CLN_ALM_RESP",
-  "messageId": "755052881",
-  "meta": { "topic": "...", "rawType": "clear_u_warning" },
-  "data": [
-    { "moduleIndex": 4, "moduleId": "3074309747", "uTotal": 18, "result": "Success" }
-  ]
-}
+{"msg_type": "clear_u_warning", "data": [{"result": "Success"}]}
 ```
 
 ---
 
-## 6. Special Handling
+## 5. Special Handling
 
-### 6.1 Unknown Message Type
+### 5.1 Null/Empty Filtering
 
-- Set `messageType = "UNKNOWN"`
-- Preserve raw payload
-- Do NOT throw error
+RFID items with null or empty `tag_code` are skipped:
 
-### 6.2 Parse Error
-
-- Log error with context
-- Return `null`
-- Do NOT throw error
-
-### 6.3 Module Field Aliases
-
-The parser supports multiple field names for flexibility:
-
-| SIF Key | Primary Field | Alias Fields |
-|---------|---------------|--------------|
-| `moduleIndex` | `module_index` | `host_gateway_port_index`, `index` |
-| `moduleId` | `module_sn` | `extend_module_sn`, `module_id` |
-| `data` (RFID) | `data` | `u_data` |
-| `data` (Temp) | `data` | `th_data` |
-| `data` (Color) | `data` | `color_data` |
-| `result` (Set) | `result` | `set_property_result` |
-| `result` (Clear) | `result` | `ctr_flag` |
-
-### 6.4 Null/Empty Filtering
-
-RFID items with `null` or empty `tag_code` are filtered out:
-
-```javascript
+```jsx
 if (!tagId || tagId === "" || tagId === null || tagId === undefined) {
   return; // Skip this item
 }
 ```
 
-### 6.5 Zero Value Handling
+### 5.2 Zero Value Handling
 
 Temperature/Humidity values of `0` are converted to `null`:
 
-```javascript
+```jsx
 temp: thItem.temper_swot === 0 ? null : thItem.temper_swot
 ```
 
+### 5.3 Unknown Message Types
+
+- Set `messageType = "UNKNOWN"`
+- Preserve raw payload
+- Do NOT throw error
+
 ---
 
-## 7. Supported Message Types Summary
+## 6. Supported Message Types
 
 | Type | Supported | Description |
-|------|-----------|-------------|
+| --- | --- | --- |
 | `HEARTBEAT` | ✓ | Periodic heartbeat |
 | `RFID_SNAPSHOT` | ✓ | Full RFID state |
 | `RFID_EVENT` | ✓ | Tag attach/detach |
 | `TEMP_HUM` | ✓ | Temperature/humidity |
 | `QRY_TEMP_HUM_RESP` | ✓ | Query response |
-| `DOOR_STATE` | ✓ | Door open/close |
+| `DOOR_STATE` | ✓ | Door open/close (single/dual) |
 | `QRY_DOOR_STATE_RESP` | ✓ | Query response |
 | `DEV_MOD_INFO` | ✓ | Device+module info |
 | `UTOTAL_CHANGED` | ✓ | Module config change |
@@ -469,13 +255,30 @@ temp: thItem.temper_swot === 0 ? null : thItem.temper_swot
 
 ---
 
-## 8. Key Differences from V5008
+## 7. Key Differences from V5008
 
 | Aspect | V5008 | V6800 |
-|--------|-------|-------|
+| --- | --- | --- |
 | **Format** | Binary | JSON |
 | **Max Modules** | 5 | 24 |
 | **Module Data** | Flat or top-level | Nested in `data` array |
 | **Device ID** | From topic or header | From `gateway_sn` field |
 | **Door Sensors** | Single only | Single or Dual |
 | **Noise Level** | Supported | Not supported |
+
+---
+
+## 8. Related Documentation
+
+| Document | Content |
+| --- | --- |
+| [message_map_spec.md](message_map_spec.md) | RAW → SIF → SUO → DB transformations |
+| [middleware_spec.md](middleware_spec.md) | System architecture, SIF/SUO contracts |
+| [normalizer_spec.md](normalizer_spec.md) | SUO normalization, StateCache |
+| [v5008_parser_spec.md](v5008_parser_spec.md) | Binary protocol reference |
+
+---
+
+**Last Updated:** 2026-02-12
+
+**Maintainer:** IoT Middleware Pro Team
