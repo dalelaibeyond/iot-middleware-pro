@@ -8,6 +8,8 @@
 const eventBus = require("../../core/EventBus");
 const V5008Parser = require("./V5008Parser");
 const V6800Parser = require("./V6800Parser");
+const config = require("config");
+const logger = require("../../core/Logger");
 
 class ParserManager {
   constructor() {
@@ -80,21 +82,24 @@ class ParserManager {
         });
       } else {
         // V6800 uses JSON payload
-        // Debug logging for V6800 messages
-        //console.log("[ParserManager] V6800 Device ID:", deviceId);
-        //console.log("[ParserManager] V6800 Topic:", topic);
-        //console.log("[ParserManager] V6800 Payload type:", typeof payload);
-        console.log("#######[ParserManager] V6800 topic:", topic);
-        console.log("#######[ParserManager] V6800 raw:\n", payload);
-
         sif = parser.parse(topic, payload);
       }
 
       if (!sif) {
         console.warn(
-          `Failed to parse message from device ${deviceId} (type: ${deviceType})`,
+          `[ParserManager] Failed to parse message from device ${deviceId} (type: ${deviceType})`
         );
         return;
+      }
+
+      // Debug: Log SIF
+      try {
+        const debugConfig = config.get("debug");
+        if (debugConfig && debugConfig.logSif) {
+          logger.debug("SIF parsed", sif);
+        }
+      } catch (e) {
+        // Debug config not available, skip
       }
 
       // Emit parsed SIF for normalizer
@@ -102,7 +107,7 @@ class ParserManager {
       // For now, we'll use a custom event
       eventBus.emit("data.parsed", sif);
     } catch (error) {
-      console.error(`ParserManager error:`, error.message);
+      console.error(`[ParserManager] Error:`, error.message);
       eventBus.emitError(error, "ParserManager");
     }
   }

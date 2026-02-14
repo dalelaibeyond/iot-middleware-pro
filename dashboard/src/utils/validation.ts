@@ -42,7 +42,7 @@ export const validateDeviceMetadata = (data: any): data is DeviceMetadata => {
   const hasValidModules = Array.isArray(modules) && modules.every(
     (module: any) =>
       typeof module.moduleIndex === "number" &&
-      typeof module.moduleId === "string" &&
+      (module.moduleId === null || module.moduleId === undefined || typeof module.moduleId === "string") &&
       typeof module.uTotal === "number",
   );
 
@@ -52,11 +52,15 @@ export const validateDeviceMetadata = (data: any): data is DeviceMetadata => {
     console.log("[DEBUG] Device validation failed for:", deviceId, {
       hasDeviceId,
       hasDeviceType,
+      deviceType,
       hasValidIp,
+      ip,
       hasValidFwVer,
+      fwVer,
       hasValidOnline,
       hasValidModules,
       modules,
+      data,
     });
   }
 

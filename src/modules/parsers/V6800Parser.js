@@ -51,12 +51,6 @@ class V6800Parser {
    */
   parse(topic, message) {
     try {
-      // DEBUG: Entry point - message before parsing
-      // console.log(
-      //   "[V6800Parser] DEBUG - Received message for parsing, topic:",
-      //   topic,
-      // );
-
       // Parse JSON if message is a string
       let json;
       if (typeof message === "string") {
@@ -96,25 +90,12 @@ class V6800Parser {
       const rawType = json.msg_type;
       let messageType = this.messageTypeMap[rawType] || "UNKNOWN";
 
-      // console.log(
-      //   "[V6800Parser] DEBUG - Processing message type:",
-      //   rawType,
-      //   "->",
-      //   messageType,
-      // );
-
       // Additional defensive check - if msg_type is undefined, check if it might be in a different field
-      if (!rawType && json.msg_type !== undefined) {
-        console.log(
-          "[V6800Parser] WARNING - msg_type is undefined, checking alternative fields...",
-        );
+      if (!rawType) {
         // Check common alternative field names that might contain the message type
         const alternatives = ["message_type", "type", "messageType", "cmd"];
         for (const alt of alternatives) {
           if (json[alt] !== undefined) {
-            console.log(
-              `[V6800Parser] Found message type in alternative field: ${alt} = ${json[alt]}`,
-            );
             rawType = json[alt];
             messageType = this.messageTypeMap[rawType] || "UNKNOWN";
             break;
@@ -172,13 +153,6 @@ class V6800Parser {
         }
       }
 
-      // console.log(
-      //   "[V6800Parser] DEBUG - Successfully parsed message, type:",
-      //   sif.messageType,
-      // );
-
-      console.log("##[V6800Parser] parsed sif:", sif);
-
       return sif;
     } catch (error) {
       console.error(`V6800Parser error:`, error.message);
@@ -209,11 +183,6 @@ class V6800Parser {
             : json.sn
               ? String(json.sn)
               : "";
-    
-    // Debug logging for empty deviceId
-    if (!deviceId) {
-      console.log("[V6800Parser] extractDeviceId - empty result, available fields:", Object.keys(json));
-    }
     
     return deviceId;
   }
@@ -264,7 +233,6 @@ class V6800Parser {
         return this.parseClnAlmResp(json);
       default:
         // Unknown message type - preserve raw payload
-        console.log("[V6800Parser] DEBUG - Unknown message type:", messageType);
         return json;
     }
   }

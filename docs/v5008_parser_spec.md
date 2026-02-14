@@ -5,9 +5,9 @@
 > **Component:** V5008Parser (Binary Protocol)
 > 
 > 
-> **Version:** 2.0.0
+> **Version:** 2.1.2
 > 
-> **Last Updated:** 2026-02-12
+> **Last Updated:** 2026-02-13 (sync with message_map_spec v2.1.2)
 > 
 > **Status:** As-Built (Verified against source code)
 > 
@@ -24,7 +24,7 @@
 | **Source** | `src/modules/parsers/V5008Parser.js` |
 | **Error Handling** | Log errors, return `null`. Never throw exceptions. |
 
-**See Also:** [message_map_spec.md](message_map_spec.md) for complete RAW → SIF → SUO transformations.
+**See Also:** [message_map_spec.md](message_map_spec.md) for complete RAW → SIF → SUO → DB → UOS transformations.
 
 ---
 

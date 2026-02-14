@@ -96,6 +96,16 @@ Edit `config/default.json`:
         "password": "your-password",
         "database": "iot_middleware"
       }
+    },
+    "normalizer": {
+      "smartHeartbeat": {
+        "enabled": true,
+        "staggerDelay": 500,
+        "stalenessThresholds": {
+          "tempHum": 5,
+          "rfid": 60
+        }
+      }
     }
   }
 }
@@ -166,6 +176,30 @@ Content-Type: application/json
 
 ---
 
+## ⚙️ Configuration Options
+
+### SmartHeartbeat (Data Warmup)
+
+SmartHeartbeat automatically queries devices for missing or stale data during heartbeat processing:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable/disable automatic data queries |
+| `staggerDelay` | `500` | ms between command emissions |
+| `stalenessThresholds.tempHum` | `5` | Minutes before temp/hum considered stale |
+| `stalenessThresholds.rfid` | `60` | Minutes before RFID snapshot considered stale |
+
+**When disabled (`enabled: false`):**
+- Basic self-healing still works:
+  - Queries for missing `ip`/`mac` (all devices)
+  - Queries for missing `fwVer` (V5008 only, via `QRY_MODULE_INFO`)
+- No automatic queries for temp/humidity, RFID, or door state
+- Cache warms up naturally as devices report data
+
+**Full configuration reference:** [config/default.json](config/default.json)
+
+---
+
 ## 📡 WebSocket Protocol
 
 **Endpoint:** `ws://localhost:3001`
@@ -190,19 +224,27 @@ The WebSocket broadcasts SUO (Standard Unified Object) messages immediately afte
 
 ## 🗄️ Database Schema
 
+**Schema Version:** 2.1.0
+
 Key tables:
 
-| Table | Purpose |
-|-------|---------|
-| `iot_meta_data` | Device metadata (UPSERT on device_id) |
-| `iot_temp_hum` | Temperature/humidity (pivoted columns 10-15) |
-| `iot_noise_level` | Noise levels (pivoted columns 16-18) |
-| `iot_rfid_event` | RFID attach/detach events |
-| `iot_door_event` | Door state changes |
-| `iot_heartbeat` | Device heartbeats |
-| `iot_topchange_event` | Configuration change audit log |
+| Table | Purpose | `message_id` |
+|-------|---------|--------------|
+| `iot_meta_data` | Device metadata (UPSERT on device_id) | - |
+| `iot_temp_hum` | Temperature/humidity (pivoted columns 10-15) | Optional |
+| `iot_noise_level` | Noise levels (pivoted columns 16-18) | Optional |
+| `iot_rfid_event` | RFID attach/detach events | **Required** |
+| `iot_door_event` | Door state changes | **Required** |
+| `iot_heartbeat` | Device heartbeats | Optional |
+| `iot_cmd_result` | Command responses | **Required** |
+| `iot_topchange_event` | Configuration change audit log | **Required** |
 
-**Full schema:** [database/schema.sql](database/schema.sql)
+**Timestamp Semantics:**
+- `parse_at`: SUO creation time (when message was parsed)
+- `update_at`: DB operation time (when record was inserted/updated)
+
+**Full schema:** [database/schema.sql](database/schema.sql)  
+**Field Mappings:** [docs/message_map_spec.md](docs/message_map_spec.md)
 
 ---
 

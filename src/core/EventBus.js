@@ -9,6 +9,8 @@
  */
 
 const EventEmitter = require("events");
+const config = require("config");
+const logger = require("./Logger");
 
 class EventBus extends EventEmitter {
   constructor() {
@@ -29,9 +31,15 @@ class EventBus extends EventEmitter {
    * @param {Object} suo - The Standard Unified Object
    */
   emitDataNormalized(suo) {
-    //TEMP-DEBUG: Log SUO structure
-    //console.log("[EventBus] emitDataNormalized SUO:\n");
-    //console.log(suo);
+    // Debug: Log SUO
+    try {
+      const debugConfig = config.get("debug");
+      if (debugConfig && debugConfig.logSuo && suo) {
+        logger.debug("SUO normalized", suo);
+      }
+    } catch (e) {
+      // Debug config not available, skip
+    }
     this.emit("data.normalized", suo);
   }
 

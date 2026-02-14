@@ -88,7 +88,7 @@ class CacheWatchdog {
       // to iterate all device-module pairs without modifying StateCache
       // This would be implemented by adding a getAllDeviceModulePairs() method
 
-      console.log("CacheWatchdog check completed");
+
     } catch (error) {
       console.error("CacheWatchdog error:", error.message);
       eventBus.emitError(error, "CacheWatchdog");

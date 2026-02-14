@@ -32,10 +32,6 @@ class V5008Parser {
    * @returns {Object|null} SIF (Standard Intermediate Format) or null if parse fails
    */
   parse(buffer, metadata) {
-    //TEMP-DEBUG
-    //console.log("[V5008Parser] Raw Hex:\n");
-    //console.log({topic:metadata.topic, rawHex:buffer.toString('hex').toUpperCase()});
-
     try {
       if (!Buffer.isBuffer(buffer)) {
         console.error("V5008Parser: Invalid input, expected Buffer");
@@ -78,10 +74,6 @@ class V5008Parser {
         // For messages that return arrays (HEARTBEAT, MODULE_INFO)
         sif.data = parsedData;
       }
-
-      //TEMP-DEBUG
-      console.log("[V5008Parser] Parsed SIF:");
-      console.log(sif);
 
       return sif;
     } catch (error) {

@@ -44,7 +44,7 @@ class ApiServer {
     // CORS middleware (adjust as needed for your frontend)
     this.app.use((req, res, next) => {
       const origin = req.headers.origin;
-      console.log(`CORS: Request from ${origin} for ${req.method} ${req.url}`);
+
 
       res.header("Access-Control-Allow-Origin", "*");
       res.header(
@@ -58,7 +58,7 @@ class ApiServer {
       res.header("Access-Control-Allow-Credentials", "true");
 
       if (req.method === "OPTIONS") {
-        console.log("CORS: Preflight request");
+
         return res.status(200).send();
       }
       next();
@@ -219,7 +219,7 @@ class ApiServer {
             gwIp: metadata.gwIp,
             isOnline: true,
             lastSeenInfo: metadata.lastSeenInfo,
-            modules: modules.sort((a, b) => a.moduleIndex - b.moduleIndex),
+            activeModules: modules.sort((a, b) => a.moduleIndex - b.moduleIndex),
           });
         }
 
@@ -236,7 +236,7 @@ class ApiServer {
               gwIp: dbDevice.device_gwIp,
               isOnline: false,
               lastSeenInfo: dbDevice.last_seen_info,
-              modules: dbDevice.modules || [],
+              activeModules: dbDevice.active_modules || [],
             });
           }
         }
@@ -271,6 +271,50 @@ class ApiServer {
       } catch (error) {
         console.error("[ApiServer] Error fetching module state:", error.message);
         res.status(500).json({ error: "Failed to fetch module state" });
+      }
+    });
+
+    // GET /api/uos/:deviceId/:moduleIndex - Get UOS (Unified Object State) for a module
+    this.app.get("/api/uos/:deviceId/:moduleIndex", (req, res) => {
+      try {
+        const { deviceId, moduleIndex } = req.params;
+        const state = StateCache.getTelemetry(
+          deviceId,
+          parseInt(moduleIndex),
+        );
+
+        if (!state) {
+          return res.status(404).json({ error: "UOS module state not found" });
+        }
+
+        res.json({
+          deviceId,
+          moduleIndex: parseInt(moduleIndex),
+          uos: state,
+        });
+      } catch (error) {
+        console.error("[ApiServer] Error fetching UOS:", error.message);
+        res.status(500).json({ error: "Failed to fetch UOS" });
+      }
+    });
+
+    // GET /api/meta/:deviceId - Get device metadata (UOS metadata cache)
+    this.app.get("/api/meta/:deviceId", (req, res) => {
+      try {
+        const { deviceId } = req.params;
+        const metadata = StateCache.getMetadata(deviceId);
+
+        if (!metadata) {
+          return res.status(404).json({ error: "Device metadata not found" });
+        }
+
+        res.json({
+          deviceId,
+          metadata,
+        });
+      } catch (error) {
+        console.error("[ApiServer] Error fetching metadata:", error.message);
+        res.status(500).json({ error: "Failed to fetch metadata" });
       }
     });
 

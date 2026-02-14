@@ -14,7 +14,7 @@ class UnifyNormalizer {
   constructor() {
     this.config = null;
     this.stateCache = StateCache;
-    this.smartHeartbeat = new SmartHeartbeat(eventBus);
+    this.smartHeartbeat = null; // Initialized in initialize()
   }
 
   /**
@@ -24,7 +24,12 @@ class UnifyNormalizer {
    */
   async initialize(config) {
     this.config = config;
-    console.log("  UnifyNormalizer initialized");
+    
+    // Initialize SmartHeartbeat with config (may be disabled)
+    const shConfig = config.smartHeartbeat || {};
+    this.smartHeartbeat = new SmartHeartbeat(eventBus, shConfig);
+    
+    console.log(`  UnifyNormalizer initialized (SmartHeartbeat: ${shConfig.enabled !== false ? 'enabled' : 'disabled'})`);
   }
 
   /**
@@ -136,6 +141,7 @@ class UnifyNormalizer {
     validModules.forEach((module) => {
       this.stateCache.updateHeartbeat(
         deviceId,
+        deviceType,
         module.moduleIndex,
         module.moduleId,
         module.uTotal,
@@ -144,7 +150,7 @@ class UnifyNormalizer {
 
     // Step 1: Reconcile activeModules into metadata cache
     // HEARTBEAT is authoritative for presence - syncs module list
-    const changes = this.stateCache.reconcileMetadata(deviceId, validModules);
+    const changes = this.stateCache.reconcileMetadata(deviceId, deviceType, validModules);
 
     // Emit META_CHANGED_EVENT if any changes detected (module added/removed/uTotal changes)
     if (changes.length > 0) {
@@ -176,8 +182,9 @@ class UnifyNormalizer {
     if (deviceType === "V5008") {
       const modulesMissingFwVer = this.stateCache.getModulesMissingFwVer(deviceId);
       if (modulesMissingFwVer.length > 0) {
+        const moduleIndices = modulesMissingFwVer.map(m => m.moduleIndex).join(',');
         console.log(
-          `[UnifyNormalizer] Self-healing: Device ${deviceId} has ${modulesMissingFwVer.length} modules missing fwVer, requesting module info`,
+          `[UnifyNormalizer] Self-healing: Device ${deviceId} modules [${moduleIndices}] missing fwVer, requesting module info`,
         );
         eventBus.emitCommandRequest({
           deviceId,
@@ -189,12 +196,16 @@ class UnifyNormalizer {
 
     // Step 3: Smart Heartbeat Check (Data Warmup)
     // Comprehensive cache check and repair for all modules
-    this.smartHeartbeat.checkAndRepair(
-      deviceId,
-      deviceType,
-      validModules,
-      this.stateCache
-    );
+    // Note: This only runs if SmartHeartbeat is enabled in config
+    // Basic self-healing (ip/mac/fwVer) still happens in Step 2 above
+    if (this.smartHeartbeat) {
+      this.smartHeartbeat.checkAndRepair(
+        deviceId,
+        deviceType,
+        validModules,
+        this.stateCache
+      );
+    }
 
     // Step 4: Emit DEVICE_METADATA SUO from cache
     this.emitDeviceMetadata(sif);
@@ -233,9 +244,8 @@ class UnifyNormalizer {
       );
 
       // Normalize current snapshot (map uIndex to sensorIndex)
+      // Note: moduleIndex and moduleId are at SUO root level, not in payload items
       const currentSnapshot = data.map((item) => ({
-        moduleIndex,
-        moduleId,
         sensorIndex: item.uIndex || item.sensorIndex,
         tagId: item.tagId,
         isAlarm: item.isAlarm || false,
@@ -256,8 +266,6 @@ class UnifyNormalizer {
             moduleId: event.moduleId,
             payload: [
               {
-                moduleIndex: event.moduleIndex,
-                moduleId: event.moduleId,
                 sensorIndex: event.sensorIndex,
                 tagId: event.tagId,
                 action: event.action,
@@ -284,6 +292,7 @@ class UnifyNormalizer {
       // Update cache with new snapshot
       this.stateCache.updateTelemetryField(
         deviceId,
+        deviceType,
         moduleIndex,
         "rfidSnapshot",
         currentSnapshot,
@@ -309,9 +318,8 @@ class UnifyNormalizer {
         );
 
         // Normalize current snapshot (map uIndex to sensorIndex)
+        // Note: moduleIndex and moduleId are at SUO root level, not in payload items
         const currentSnapshot = rfidData.map((item) => ({
-          moduleIndex,
-          moduleId,
           sensorIndex: item.uIndex || item.sensorIndex,
           tagId: item.tagId,
           isAlarm: item.isAlarm || false,
@@ -335,8 +343,6 @@ class UnifyNormalizer {
               moduleId: event.moduleId,
               payload: [
                 {
-                  moduleIndex: event.moduleIndex,
-                  moduleId: event.moduleId,
                   sensorIndex: event.sensorIndex,
                   tagId: event.tagId,
                   action: event.action,
@@ -363,6 +369,7 @@ class UnifyNormalizer {
         // Update cache with new snapshot
         this.stateCache.updateTelemetryField(
           deviceId,
+          deviceType,
           moduleIndex,
           "rfidSnapshot",
           currentSnapshot,
@@ -399,9 +406,8 @@ class UnifyNormalizer {
       );
 
       // Normalize current snapshot (map uIndex to sensorIndex)
+      // Note: moduleIndex and moduleId are at SUO root level, not in payload items
       const currentSnapshot = rfidData.map((item) => ({
-        moduleIndex,
-        moduleId,
         sensorIndex: item.uIndex || item.sensorIndex,
         tagId: item.tagId,
         isAlarm: item.isAlarm || false,
@@ -422,8 +428,6 @@ class UnifyNormalizer {
             moduleId: event.moduleId,
             payload: [
               {
-                moduleIndex: event.moduleIndex,
-                moduleId: event.moduleId,
                 sensorIndex: event.sensorIndex,
                 tagId: event.tagId,
                 action: event.action,
@@ -450,6 +454,7 @@ class UnifyNormalizer {
       // Update cache with new snapshot
       this.stateCache.updateTelemetryField(
         deviceId,
+        deviceType,
         moduleIndex,
         "rfidSnapshot",
         currentSnapshot,
@@ -476,9 +481,8 @@ class UnifyNormalizer {
         );
 
         // Normalize current snapshot (map uIndex to sensorIndex)
+        // Note: moduleIndex and moduleId are at SUO root level, not in payload items
         const currentSnapshot = readings.map((item) => ({
-          moduleIndex,
-          moduleId,
           sensorIndex: item.uIndex || item.sensorIndex,
           tagId: item.tagId,
           isAlarm: item.isAlarm || false,
@@ -502,8 +506,6 @@ class UnifyNormalizer {
               moduleId: event.moduleId,
               payload: [
                 {
-                  moduleIndex: event.moduleIndex,
-                  moduleId: event.moduleId,
                   sensorIndex: event.sensorIndex,
                   tagId: event.tagId,
                   action: event.action,
@@ -530,6 +532,7 @@ class UnifyNormalizer {
         // Update cache with new snapshot
         this.stateCache.updateTelemetryField(
           deviceId,
+          deviceType,
           moduleIndex,
           "rfidSnapshot",
           currentSnapshot,
@@ -701,6 +704,7 @@ class UnifyNormalizer {
         // Update cache
         this.stateCache.updateTelemetryField(
           deviceId,
+          deviceType,
           moduleIndex,
           "tempHum",
           normalizedData,
@@ -758,6 +762,7 @@ class UnifyNormalizer {
       // Update cache
       this.stateCache.updateTelemetryField(
         deviceId,
+        deviceType,
         moduleIndex,
         "tempHum",
         normalizedData,
@@ -814,6 +819,7 @@ class UnifyNormalizer {
       // Update cache
       this.stateCache.updateTelemetryField(
         deviceId,
+        deviceType,
         moduleIndex,
         "tempHum",
         normalizedData,
@@ -867,6 +873,7 @@ class UnifyNormalizer {
         // Update cache
         this.stateCache.updateTelemetryField(
           deviceId,
+          deviceType,
           moduleIndex,
           "tempHum",
           normalizedData,
@@ -931,6 +938,7 @@ class UnifyNormalizer {
         // Update cache
         this.stateCache.updateTelemetryField(
           deviceId,
+          deviceType,
           moduleIndex,
           "noiseLevel",
           normalizedData,
@@ -984,6 +992,7 @@ class UnifyNormalizer {
       // Update cache
       this.stateCache.updateTelemetryField(
         deviceId,
+        deviceType,
         moduleIndex,
         "noiseLevel",
         normalizedData,
@@ -1036,6 +1045,7 @@ class UnifyNormalizer {
       // Update cache
       this.stateCache.updateTelemetryField(
         deviceId,
+        deviceType,
         moduleIndex,
         "noiseLevel",
         normalizedData,
@@ -1088,6 +1098,7 @@ class UnifyNormalizer {
         // Update cache
         this.stateCache.updateTelemetryField(
           deviceId,
+          deviceType,
           moduleIndex,
           "noiseLevel",
           normalizedData,
@@ -1149,11 +1160,17 @@ class UnifyNormalizer {
         // Update cache
         const telemetry =
           this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
+        telemetry.deviceId = deviceId;
+        telemetry.deviceType = deviceType;
+        telemetry.moduleIndex = moduleIndex;
         telemetry.doorState = doorState.doorState;
         telemetry.door1State = doorState.door1State;
         telemetry.door2State = doorState.door2State;
         telemetry.lastSeenDoor = new Date().toISOString();
         this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
+        
+        // Log UOS door state
+        this.stateCache.getDoorState(deviceId, moduleIndex);
       });
     } else if (data && typeof data === "object" && !Array.isArray(data)) {
       // V5008 style: object with top-level fields (moduleIndex, moduleId, doorState)
@@ -1188,11 +1205,17 @@ class UnifyNormalizer {
       // Update cache
       const telemetry =
         this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
+      telemetry.deviceId = deviceId;
+      telemetry.deviceType = deviceType;
+      telemetry.moduleIndex = moduleIndex;
       telemetry.doorState = doorStatePayload.doorState;
       telemetry.door1State = doorStatePayload.door1State;
       telemetry.door2State = doorStatePayload.door2State;
       telemetry.lastSeenDoor = new Date().toISOString();
       this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
+      
+      // Log UOS door state
+      this.stateCache.getDoorState(deviceId, moduleIndex);
     } else if (moduleIndex !== undefined && moduleId !== undefined) {
       // V5008 style: door state fields merged directly into SIF (no data object)
       // Business logic validation: modAddr must be [1-5] and modId must not be 0
@@ -1224,11 +1247,17 @@ class UnifyNormalizer {
       // Update cache
       const telemetry =
         this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
+      telemetry.deviceId = deviceId;
+      telemetry.deviceType = deviceType;
+      telemetry.moduleIndex = moduleIndex;
       telemetry.doorState = doorStatePayload.doorState;
       telemetry.door1State = doorStatePayload.door1State;
       telemetry.door2State = doorStatePayload.door2State;
       telemetry.lastSeenDoor = new Date().toISOString();
       this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
+      
+      // Log UOS door state
+      this.stateCache.getDoorState(deviceId, moduleIndex);
     } else {
       console.warn(
         `[UnifyNormalizer] Invalid or missing door state data for device ${deviceId}`,
@@ -1278,11 +1307,17 @@ class UnifyNormalizer {
       // Update cache
       const telemetry =
         this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
+      telemetry.deviceId = deviceId;
+      telemetry.deviceType = deviceType;
+      telemetry.moduleIndex = moduleIndex;
       telemetry.doorState = doorStatePayload.doorState;
       telemetry.door1State = doorStatePayload.door1State;
       telemetry.door2State = doorStatePayload.door2State;
       telemetry.lastSeenDoor = new Date().toISOString();
       this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
+      
+      // Log UOS door state
+      this.stateCache.getDoorState(deviceId, moduleIndex);
     } else {
       console.warn(
         `[UnifyNormalizer] Invalid or missing door state query response data for device ${deviceId}`,
@@ -1364,11 +1399,14 @@ class UnifyNormalizer {
             }))
           : [];
 
+      // For V6800, use first module's fwVer as device fwVer if not at SIF level
+      const deviceFwVer = sif.fwVer || (activeModules.length > 0 ? activeModules[0].fwVer : null);
+
       const incomingMetadata = {
         deviceType,
         ip: sif.ip || null,
         mac: sif.mac || null,
-        fwVer: sif.fwVer || null,
+        fwVer: deviceFwVer,
         mask: sif.mask || null,
         gwIp: sif.gwIp || null,
         activeModules: activeModules,
@@ -1610,13 +1648,6 @@ class UnifyNormalizer {
   emitDeviceMetadata(sif) {
     const { deviceId, deviceType, messageId } = sif;
 
-    // DEBUG: Log SIF structure
-    //console.log(
-    //  "[UnifyNormalizer] emitDeviceMetadata SIF:",
-    //  JSON.stringify(sif, null, 2),
-    //);
-    //console.log("[UnifyNormalizer] deviceType from SIF:", deviceType);
-
     // Get full metadata from cache (UOS)
     const fullMetadata = this.stateCache.getMetadata(deviceId);
     if (fullMetadata) {
@@ -1654,12 +1685,6 @@ class UnifyNormalizer {
         // Payload with modules from cache (UOS) - contains complete module info
         payload: activeModules,
       };
-
-      // DEBUG: Log SUO structure before emission
-      //console.log(
-      //  "[UnifyNormalizer] Emitting DEVICE_METADATA SUO:",
-      //  JSON.stringify(metadataSuo, null, 2),
-      //);
 
       eventBus.emitDataNormalized(metadataSuo);
     }

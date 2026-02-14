@@ -117,8 +117,12 @@ class CommandService {
 
       const { deviceId, deviceType, messageType, payload = {} } = command;
 
+      // Build log message with module info if present
+      const moduleInfo = payload.moduleIndex !== undefined 
+        ? ` [moduleIndex: ${payload.moduleIndex}]`
+        : '';
       console.log(
-        `Command request: ${messageType} for device ${deviceId} (${deviceType})`,
+        `Command request: ${messageType} for device ${deviceId} (${deviceType})${moduleInfo}`,
       );
 
       // Validate required parameters based on command type
@@ -194,14 +198,6 @@ class CommandService {
         return;
       }
 
-      // Log the outbound command for audit purposes
-      console.log(`Publishing command to topic: ${topic}`);
-      if (deviceType === "V5008") {
-        console.log(`Hex payload:`, mqttPayload.toString("hex").toUpperCase());
-      } else {
-        console.log(`JSON payload:`, mqttPayload);
-      }
-
       // Publish to appropriate topic
       this.client.publish(
         topic,
@@ -214,8 +210,6 @@ class CommandService {
               err.message,
             );
             eventBus.emitError(err, "CommandService");
-          } else {
-            console.log(`Command published to ${topic}`);
           }
         },
       );

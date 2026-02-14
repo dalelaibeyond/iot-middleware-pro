@@ -3,12 +3,18 @@
  *
  * Handles storage of normalized data to MySQL with batching and pivoting.
  * Routes SUO messages to appropriate database tables based on message type.
+ * 
+ * Schema Version: 2.1.0
+ * - Added message_id to all tables for traceability
+ * - parse_at: SUO creation time
+ * - update_at: DB operation time (handled by DB default)
  */
 
 const eventBus = require("../../core/EventBus");
 const database = require("../../core/Database");
 const StateCache = require("../normalizer/StateCache");
 const c = require("config");
+const logger = require("../../core/Logger");
 
 class StorageService {
   constructor() {
@@ -59,10 +65,6 @@ class StorageService {
    */
   handleData(suo) {
     try {
-      //TEMP-DEBUG: Log SUO structure when received
-      console.log("[StorageService] Received SUO:");
-      console.log(suo);
-
       // Check if this message type should be stored
       if (this.config.filters && this.config.filters.length > 0) {
         if (!this.config.filters.includes(suo.messageType)) {
@@ -102,7 +104,8 @@ class StorageService {
           this.handleMetaChangedEvent(suo);
           break;
         default:
-          console.warn(`Unknown message type: ${suo.messageType}`);
+          // Unknown message type - silently skip
+          break;
       }
 
       // Check if batch is full
@@ -116,7 +119,7 @@ class StorageService {
         this.flush();
       }
     } catch (error) {
-      console.error("StorageService error:", error.message);
+      // Error already emitted via EventBus
       eventBus.emitError(error, "StorageService");
     }
   }
@@ -126,12 +129,13 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleHeartbeat(suo) {
-    const { deviceId, payload } = suo;
+    const { deviceId, deviceType, payload, messageId } = suo;
 
     // Update cache with module details
     payload.forEach((item) => {
       StateCache.updateHeartbeat(
         deviceId,
+        deviceType,
         item.moduleIndex,
         item.moduleId,
         item.uTotal,
@@ -141,7 +145,8 @@ class StorageService {
     // Buffer for storage
     this.addToBatch("iot_heartbeat", {
       device_id: deviceId,
-      modules: JSON.stringify(payload),
+      message_id: messageId || null,
+      active_modules: JSON.stringify(payload),
       parse_at: new Date(),
     });
   }
@@ -151,12 +156,13 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleRfidSnapshot(suo) {
-    const { deviceId, moduleIndex, payload } = suo;
+    const { deviceId, moduleIndex, payload, messageId } = suo;
 
     // Buffer for storage (store as JSON)
     this.addToBatch("iot_rfid_snapshot", {
       device_id: deviceId,
       module_index: moduleIndex || 1,
+      message_id: messageId || null,
       rfid_snapshot: JSON.stringify(payload),
       parse_at: new Date(),
     });
@@ -167,17 +173,18 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleRfidEvent(suo) {
-    const { deviceId, payload } = suo;
+    const { deviceId, moduleIndex, payload, messageId } = suo;
 
     // Iterate through payload and insert each item
     payload.forEach((item) => {
       this.addToBatch("iot_rfid_event", {
         device_id: deviceId,
-        module_index: item.moduleIndex,
+        module_index: moduleIndex,
+        message_id: messageId || "",
         sensor_index: item.sensorIndex,
         tag_id: item.tagId,
         action: item.action,
-        alarm: item.alarm || false,
+        alarm: item.isAlarm || false,
         parse_at: new Date(),
       });
     });
@@ -204,6 +211,7 @@ class StorageService {
     this.addToBatch("iot_temp_hum", {
       device_id: deviceId,
       module_index: moduleIndex,
+      message_id: suo.messageId || null,
       ...pivotedData,
       parse_at: new Date(),
     });
@@ -229,6 +237,7 @@ class StorageService {
     this.addToBatch("iot_noise_level", {
       device_id: deviceId,
       module_index: moduleIndex,
+      message_id: suo.messageId || null,
       ...pivotedData,
       parse_at: new Date(),
     });
@@ -239,7 +248,7 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleDoorState(suo) {
-    const { deviceId, moduleIndex, payload } = suo;
+    const { deviceId, moduleIndex, payload, messageId } = suo;
 
     // Read the first item in the payload array
     if (payload.length > 0) {
@@ -247,6 +256,7 @@ class StorageService {
       this.addToBatch("iot_door_event", {
         device_id: deviceId,
         module_index: moduleIndex,
+        message_id: messageId || "",
         doorState: item.doorState,
         door1State: item.door1State,
         door2State: item.door2State,
@@ -262,12 +272,9 @@ class StorageService {
   handleDeviceMetadata(suo) {
     const { deviceId, deviceType, payload, ip, mac, fwVer, mask, gwIp } = suo;
 
-    // DEBUG: Log SUO structure to diagnose deviceType issue
-    //console.log("[StorageService] handleDeviceMetadata SUO:", JSON.stringify(suo, null, 2));
-    //console.log("[StorageService] deviceType value:", deviceType);
-
     // Ensure all fields are defined to avoid undefined bindings
     // Use null for missing fields (HEARTBEAT messages may not have device-level metadata)
+    // Note: update_at is handled by DB default, but we set it explicitly for UPSERT
     const metadataData = {
       device_id: deviceId,
       device_type: deviceType || "V6800",
@@ -276,14 +283,20 @@ class StorageService {
       device_gwIp: gwIp !== undefined ? gwIp : null,
       device_ip: ip !== undefined ? ip : null,
       device_mac: mac !== undefined ? mac : null,
-      modules: payload && payload.length > 0 ? JSON.stringify(payload) : null,
+      active_modules: payload && payload.length > 0 ? JSON.stringify(payload) : null,
       parse_at: new Date(),
-      update_at: new Date(),
+      // update_at uses DB DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE
     };
 
-    //DEBUG: Log metadataData before upsert
-    //console.log("[StorageService] iot_meta_data:");
-    //console.log(metadataData);
+    // Debug: Log DB upsert
+    try {
+      const debugConfig = c.get("debug");
+      if (debugConfig && debugConfig.logDb) {
+        logger.debug("DB upsert", { table: "iot_meta_data", data: metadataData });
+      }
+    } catch (e) {
+      // Debug config not available, skip
+    }
 
     // Use UPSERT (Insert on Duplicate Key Update)
     database.upsert("iot_meta_data", metadataData, "device_id");
@@ -294,12 +307,13 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleCmdResult(suo) {
-    const { deviceId, payload } = suo;
+    const { deviceId, payload, messageId } = suo;
 
     if (payload.length > 0) {
       const result = payload[0];
       this.addToBatch("iot_cmd_result", {
         device_id: deviceId,
+        message_id: messageId || "",
         cmd: suo.messageType,
         result: result.result,
         original_req: result.originalReq || null,
@@ -314,16 +328,16 @@ class StorageService {
    * @param {Object} suo - Standard Unified Object
    */
   handleMetaChangedEvent(suo) {
-    const { deviceId, deviceType, payload } = suo;
+    const { deviceId, deviceType, payload, messageId } = suo;
 
     // Iterate through payload and insert one row per description
     payload.forEach((item) => {
       this.addToBatch("iot_topchange_event", {
         device_id: deviceId,
         device_type: deviceType,
+        message_id: messageId || "",
         event_desc: item.description,
         parse_at: new Date(),
-        update_at: new Date(),
       });
     });
   }
@@ -348,12 +362,6 @@ class StorageService {
       return;
     }
 
-    // DEBUG: Log batch buffer contents before flushing
-    //console.log("[StorageService] Batch buffer contents before flush:");
-    //for (const [table, data] of this.batchBuffer.entries()) {
-    //  console.log(`  Table: ${table}, Records: ${data.length}`);
-    //}
-
     try {
       // Convert Map to Array to ensure consistent iteration order
       const entries = Array.from(this.batchBuffer.entries());
@@ -363,15 +371,20 @@ class StorageService {
           continue;
         }
 
-        // DEBUG: Log table and data before flushing
-        console.log(`[StorageService] Flushing table: ${table}, data:`);
-        console.log(data);
+        // Debug: Log DB batch insert
+        try {
+          const debugConfig = c.get("debug");
+          if (debugConfig && debugConfig.logDb) {
+            logger.debug("DB batchInsert", { table, recordCount: data.length, sample: data[0] });
+          }
+        } catch (e) {
+          // Debug config not available, skip
+        }
 
         try {
           await database.batchInsert(table, data);
-          //console.log(`Flushed ${data.length} records to ${table}`);
         } catch (error) {
-          console.error(`Failed to flush to ${table}:`, error.message);
+          console.error(`[StorageService] Failed to flush to ${table}:`, error.message);
           eventBus.emitError(error, "StorageService");
         }
       }
@@ -379,7 +392,7 @@ class StorageService {
       // Clear buffer
       this.batchBuffer.clear();
     } catch (error) {
-      console.error("StorageService flush error:", error.message);
+      console.error("[StorageService] Flush error:", error.message);
       eventBus.emitError(error, "StorageService");
     }
   }

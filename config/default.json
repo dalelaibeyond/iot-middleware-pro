@@ -51,7 +51,15 @@
     "normalizer": {
       "cacheType": "memory",
       "heartbeatTimeout": 120000,
-      "checkInterval": 30000
+      "checkInterval": 30000,
+      "smartHeartbeat": {
+        "enabled": true,
+        "staggerDelay": 500,
+        "stalenessThresholds": {
+          "tempHum": 5,
+          "rfid": 60
+        }
+      }
     },
     "command": {
       "enabled": true
@@ -83,19 +91,18 @@
     }
   },
   "logging": {
-    "level": "info",
-    "format": "json",
-    "transports": {
-      "console": {
-        "enabled": true,
-        "colorize": true
-      },
-      "file": {
-        "enabled": true,
-        "filename": "logs/app.log",
-        "maxsize": 10485760,
-        "maxFiles": 5
-      }
-    }
+    "level": "debug",
+    "dir": "logs",
+    "maxSize": "20m",
+    "maxFiles": "14d",
+    "console": true,
+    "file": false
+  },
+  "debug": {
+    "logRawMessage": true,
+    "logSif": true,
+    "logSuo": true,
+    "logUos": true,
+    "logDb": true
   }
 }

@@ -11,6 +11,9 @@
  * Used by UnifyNormalizer for state management and by ApiServer for read-only access.
  */
 
+const config = require("config");
+const logger = require("../../core/Logger");
+
 class StateCache {
   constructor() {
     // Device metadata cache: { "device:{id}:info": { ...metadata } }
@@ -179,10 +182,11 @@ class StateCache {
    * - Add: If new in Heartbeat, add to Cache
    * - Remove: If in Cache but MISSING in Heartbeat, remove from Cache
    * @param {string} deviceId - Device ID
+   * @param {string} deviceType - Device type (V5008 or V6800)
    * @param {Array} heartbeatModules - Modules from HEARTBEAT (moduleIndex, moduleId, uTotal)
    * @returns {Array} Array of change descriptions (empty if no changes)
    */
-  reconcileMetadata(deviceId, heartbeatModules) {
+  reconcileMetadata(deviceId, deviceType, heartbeatModules) {
     const cacheKey = `device:${deviceId}:info`;
     const changes = [];
 
@@ -191,7 +195,7 @@ class StateCache {
     if (!cached) {
       cached = {
         deviceId,
-        deviceType: null,
+        deviceType: deviceType || null,
         ip: null,
         mac: null,
         fwVer: null,
@@ -200,6 +204,9 @@ class StateCache {
         activeModules: [],
         lastSeenInfo: new Date().toISOString(),
       };
+    } else if (deviceType) {
+      // Update deviceType if provided (handles case where initially created without deviceType)
+      cached.deviceType = deviceType;
     }
 
     // Create maps for efficient lookup
@@ -307,13 +314,25 @@ class StateCache {
   }
 
   /**
-   * Get full metadata from cache
+   * Get full metadata from cache (UOS)
    * @param {string} deviceId - Device ID
    * @returns {Object|null} Cached metadata or null
    */
   getMetadata(deviceId) {
     const cacheKey = `device:${deviceId}:info`;
-    return this.metadataCache.get(cacheKey) || null;
+    const uos = this.metadataCache.get(cacheKey) || null;
+    
+    // Debug: Log UOS
+    try {
+      const debugConfig = config.get("debug");
+      if (debugConfig && debugConfig.logUos && uos) {
+        logger.debug("UOS retrieved", { deviceId, uos });
+      }
+    } catch (e) {
+      // Debug config not available, skip
+    }
+    
+    return uos;
   }
 
   /**
@@ -341,19 +360,20 @@ class StateCache {
   /**
    * Update telemetry field with timestamp
    * @param {string} deviceId - Device ID
+   * @param {string} deviceType - Device type (V5008 or V6800)
    * @param {number} moduleIndex - Module index
    * @param {string} field - Field name (tempHum, noiseLevel, rfidSnapshot, doorState)
    * @param {*} value - Field value
    * @param {string} timestampField - Timestamp field name (lastSeenTh, lastSeenNs, etc.)
    */
-  updateTelemetryField(deviceId, moduleIndex, field, value, timestampField) {
+  updateTelemetryField(deviceId, deviceType, moduleIndex, field, value, timestampField) {
     const cacheKey = `device:${deviceId}:module:${moduleIndex}`;
     let telemetry = this.telemetryCache.get(cacheKey);
 
     if (!telemetry) {
       telemetry = {
         deviceId,
-        deviceType: null,
+        deviceType: deviceType || null,
         moduleIndex,
         moduleId: null,
         isOnline: false,
@@ -371,38 +391,109 @@ class StateCache {
       };
     }
 
+    // Update deviceType if provided (handles case where telemetry created before HEARTBEAT)
+    if (deviceType) {
+      telemetry.deviceType = deviceType;
+    }
+
     telemetry[field] = value;
     telemetry[timestampField] = new Date().toISOString();
 
     this.telemetryCache.set(cacheKey, telemetry);
+    
+    // Debug: Log UOS telemetry update
+    try {
+      const debugConfig = config.get("debug");
+      if (debugConfig && debugConfig.logUos) {
+        logger.debug("UOS telemetry updated", { 
+          deviceId, 
+          moduleIndex, 
+          field,
+          timestampField,
+          value 
+        });
+      }
+    } catch (e) {
+      // Debug config not available, skip
+    }
   }
 
   /**
-   * Get RFID snapshot from cache
+   * Get RFID snapshot from cache (UOS telemetry)
    * @param {string} deviceId - Device ID
    * @param {number} moduleIndex - Module index
    * @returns {Array} Cached snapshot (empty array if not found)
    */
   getRfidSnapshot(deviceId, moduleIndex) {
     const telemetry = this.getTelemetry(deviceId, moduleIndex);
-    return telemetry ? telemetry.rfidSnapshot || [] : [];
+    const snapshot = telemetry ? telemetry.rfidSnapshot || [] : [];
+    
+    // Debug: Log UOS RFID snapshot
+    try {
+      const debugConfig = config.get("debug");
+      if (debugConfig && debugConfig.logUos) {
+        logger.debug("UOS RFID snapshot retrieved", { 
+          deviceId, 
+          moduleIndex, 
+          snapshotCount: snapshot.length,
+          snapshot 
+        });
+      }
+    } catch (e) {
+      // Debug config not available, skip
+    }
+    
+    return snapshot;
+  }
+
+  /**
+   * Get door state from cache (UOS telemetry)
+   * @param {string} deviceId - Device ID
+   * @param {number} moduleIndex - Module index
+   * @returns {Object|null} Cached door state or null
+   */
+  getDoorState(deviceId, moduleIndex) {
+    const telemetry = this.getTelemetry(deviceId, moduleIndex);
+    const doorState = telemetry ? {
+      doorState: telemetry.doorState ?? null,
+      door1State: telemetry.door1State ?? null,
+      door2State: telemetry.door2State ?? null,
+      lastSeenDoor: telemetry.lastSeenDoor ?? null
+    } : null;
+    
+    // Debug: Log UOS door state
+    try {
+      const debugConfig = config.get("debug");
+      if (debugConfig && debugConfig.logUos) {
+        logger.debug("UOS door state retrieved", { 
+          deviceId, 
+          moduleIndex, 
+          doorState 
+        });
+      }
+    } catch (e) {
+      // Debug config not available, skip
+    }
+    
+    return doorState;
   }
 
   /**
    * Update heartbeat timestamp and online status
    * @param {string} deviceId - Device ID
    * @param {number} moduleIndex - Module index
+   * @param {string} deviceType - Device type (V5008 or V6800)
    * @param {string} moduleId - Module ID
    * @param {number} uTotal - Total U count
    */
-  updateHeartbeat(deviceId, moduleIndex, moduleId, uTotal) {
+  updateHeartbeat(deviceId, deviceType, moduleIndex, moduleId, uTotal) {
     const cacheKey = `device:${deviceId}:module:${moduleIndex}`;
     let telemetry = this.telemetryCache.get(cacheKey);
 
     if (!telemetry) {
       telemetry = {
         deviceId,
-        deviceType: null,
+        deviceType: deviceType || null,
         moduleIndex,
         moduleId,
         isOnline: true,
@@ -421,6 +512,7 @@ class StateCache {
     } else {
       telemetry.isOnline = true;
       telemetry.lastSeenHb = new Date().toISOString();
+      if (deviceType) telemetry.deviceType = deviceType;
       if (moduleId) telemetry.moduleId = moduleId;
       if (uTotal !== undefined) telemetry.uTotal = uTotal;
     }

@@ -5,9 +5,9 @@
 > **Component:** UnifyNormalizer, SmartHeartbeat, CacheWatchdog
 > 
 > 
-> **Version:** 2.1.0
+> **Version:** 2.1.2
 > 
-> **Last Updated:** 2026-02-12 (v2.1 - camelCase JSON Standardization)
+> **Last Updated:** 2026-02-14 (v2.2.0 - Separated SmartHeartbeat from Self-Healing, added configurable enable/disable)
 > 
 > **Status:** As-Built (Verified against source code)
 > 
@@ -85,10 +85,16 @@ SIF Input → Message Type Router → Handler → SUO Output
 **Case A: HEARTBEAT (The “Tick”)**
 
 1. **Reconcile:** Update Cache `activeModules` with moduleId/uTotal from SIF
-2. **Self-Healing Check:**
+2. **Self-Healing Check (Always Active):**
+    - **Purpose:** Ensure device can be identified and managed
     - Device Level: If Cache `ip` OR `mac` missing → Emit `QRY_DEV_MOD_INFO` (V6800) or `QRY_DEVICE_INFO` (V5008)
-    - Module Level (V5008): If any module missing `fwVer` → Emit `QRY_MODULE_INFO`
-3. **Emit:** `HEARTBEAT` SUO + `DEVICE_METADATA` SUO
+    - Module Level (V5008): If any module missing `fwVer` → Emit `QRY_MODULE_INFO` (gets ALL modules)
+3. **SmartHeartbeat Check (Configurable):**
+    - **Purpose:** Warm up telemetry cache (optional optimization)
+    - Only runs if `config.modules.normalizer.smartHeartbeat.enabled !== false`
+    - Checks per module: `tempHum`, `rfidSnapshot`, `doorState`
+    - Emits: `QRY_TEMP_HUM`, `QRY_RFID_SNAPSHOT`, `QRY_DOOR_STATE` as needed
+4. **Emit:** `HEARTBEAT` SUO + `DEVICE_METADATA` SUO
 
 **Case B: INFO Messages**
 
@@ -137,40 +143,66 @@ SIF Input → Message Type Router → Handler → SUO Output
 
 ### 3.1 Purpose
 
-Transforms `HEARTBEAT` from a simple status update into a **Health & Consistency Check**. Ensures State Cache is always complete (“Warm”) without requiring manual queries.
+Transforms `HEARTBEAT` from a simple status update into a **Telemetry Cache Warmup** service. Ensures telemetry data (temp, RFID, door) is fresh without requiring manual queries.
 
-### 3.2 Check Logic (Per Module)
+**Important:** SmartHeartbeat is **optional** and **does not** handle device metadata (ip, mac, fwVer). That is handled by UnifyNormalizer's **Self-Healing** (always active).
+
+### 3.2 Separation of Concerns
+
+| Feature | Self-Healing (Always On) | SmartHeartbeat (Optional) |
+| --- | --- | --- |
+| **Purpose** | Device identification & management | Telemetry cache warmup |
+| **Checks** | `ip`, `mac`, `fwVer` (V5008 only) | `tempHum`, `RFID`, `doorState` (telemetry) |
+| **Commands** | `QRY_DEVICE_INFO`, `QRY_MODULE_INFO` | `QRY_TEMP_HUM`, `QRY_RFID_SNAPSHOT`, `QRY_DOOR_STATE` |
+| **Config** | Not configurable | `enabled`, `staggerDelay`, `stalenessThresholds` |
+
+### 3.3 Check Logic (Per Module)
 
 | Data Type | Cache Check | Action if Missing/Stale |
 | --- | --- | --- |
-| **Metadata (V5008)** | Is `fwVer` missing? | Emit `QRY_MODULE_INFO` |
-| **Metadata (Device)** | Is `ip` or `fwVer` missing? | Emit `QRY_DEV_MOD_INFO` / `QRY_DEVICE_INFO` |
 | **Env Sensors** | Is `tempHum` empty OR `lastSeenTh` > 5 mins? | Emit `QRY_TEMP_HUM` |
 | **RFID Tags** | Is `rfidSnapshot` empty OR `lastSeenRfid` > 60 mins? | Emit `QRY_RFID_SNAPSHOT` |
 | **Door State** | Is `doorState` null? | Emit `QRY_DOOR_STATE` |
 
-### 3.3 Stagger Pattern
+### 3.4 Stagger Pattern
 
-To prevent flooding the RS485 bus, commands are emitted with delays:
+To prevent flooding the RS485 bus, commands are emitted with configurable delays:
 
 ```jsx
-// 500ms delay between each command
+// Default: 500ms delay between each command (configurable via staggerDelay)
 items.forEach((item, index) => {
   setTimeout(() => {
     eventBus.emitCommandRequest(command);
-  }, index * 500);
+  }, index * config.staggerDelay);
 });
 ```
 
-### 3.4 Implementation
+### 3.5 Configuration
+
+Location: `config.default.json` → `modules.normalizer.smartHeartbeat`
+
+```json
+{
+  "smartHeartbeat": {
+    "enabled": true,           // Set to false to disable
+    "staggerDelay": 500,       // ms between commands
+    "stalenessThresholds": {
+      "tempHum": 5,            // minutes before temp/hum considered stale
+      "rfid": 60               // minutes before RFID considered stale
+    }
+  }
+}
+```
+
+### 3.6 Implementation
 
 **File:** `src/modules/normalizer/SmartHeartbeat.js`
 
 **Key Methods:**
-- `checkAndRepair(deviceId, deviceType, modules, stateCache)` - Entry point
-- `_checkModule(deviceId, deviceType, moduleIndex, cacheSnapshot, deviceMetadata)` - Per-module checks
+- `checkAndRepair(deviceId, deviceType, modules, stateCache)` - Entry point (returns early if disabled)
+- `_checkModule(deviceId, deviceType, moduleIndex, cacheSnapshot)` - Per-module telemetry checks
 - `_needsRefresh(dataArray, lastSeen, thresholdMinutes)` - Staleness check
-- `_emitStaggered(items)` - Staggered command emission
+- `_emitStaggered(items)` - Staggered command emission with debug logging
 
 ---
 
@@ -213,11 +245,18 @@ Detects silent failures (power loss, network disconnect) where devices stop send
 
 ---
 
-## 5. StateCache Data Structure
+## 5. UOS (Unified Object State) Data Structure
 
-### 5.1 Telemetry Cache Key
+UOS represents the **current state** of devices and modules stored in the StateCache. It is used by:
+- **Normalizer**: Read/write during SUO processing
+- **ApiServer**: Read-only for REST API responses
+- **SmartHeartbeat**: Read for repair decisions
 
-Key: `device:{deviceId}:module:{moduleIndex}`
+### 5.1 Module Telemetry Cache
+
+**Cache Key:** `device:{deviceId}:module:{moduleIndex}`
+
+**Purpose:** Per-module sensor and status data
 
 ```jsx
 {
@@ -225,19 +264,23 @@ Key: `device:{deviceId}:module:{moduleIndex}`
   deviceType: "V5008|V6800",
   moduleIndex: number,
   moduleId: "string",
-
+  
+  // Status
   isOnline: boolean,
   lastSeenHb: "ISO_DATE",
-
+  uTotal: number|null,           // Total RFID slots (from HEARTBEAT)
+  
+  // Sensors (array of readings)
   tempHum: [{ sensorIndex, temp, hum }],
   lastSeenTh: "ISO_DATE",
-
+  
   noiseLevel: [{ sensorIndex, noise }],
   lastSeenNs: "ISO_DATE",
-
+  
   rfidSnapshot: [{ sensorIndex, tagId, isAlarm }],
   lastSeenRfid: "ISO_DATE",
-
+  
+  // Door state
   doorState: number|null,
   door1State: number|null,
   door2State: number|null,
@@ -245,9 +288,13 @@ Key: `device:{deviceId}:module:{moduleIndex}`
 }
 ```
 
-### 5.2 Metadata Cache Key
+**Note:** Fields are dynamically added as messages are processed. Initial state uses `null` or `[]` for arrays.
 
-Key: `device:{deviceId}:info`
+### 5.2 Device Metadata Cache
+
+**Cache Key:** `device:{deviceId}:info`
+
+**Purpose:** Device-level information (IP, MAC, firmware, module list)
 
 ```jsx
 {

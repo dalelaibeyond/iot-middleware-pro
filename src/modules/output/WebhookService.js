@@ -97,7 +97,7 @@ class WebhookService {
 
         res.on("end", () => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
-            console.log(`Webhook sent successfully: ${suo.messageType}`);
+
           } else {
             console.error(
               `Webhook failed with status ${res.statusCode}: ${data}`,

@@ -146,14 +146,12 @@ class WebSocketServer {
     };
 
     const payload = JSON.stringify(message);
-    const clientIds = [];
 
     // Send to all connected clients
     this.clients.forEach((clientInfo, ws) => {
       if (ws.readyState === WebSocket.OPEN) {
         try {
           ws.send(payload);
-          clientIds.push(clientInfo.id);
         } catch (error) {
           console.error(`[WebSocket] Failed to send to ${clientInfo.id}:`, error.message);
           this.clients.delete(ws);
@@ -161,10 +159,6 @@ class WebSocketServer {
       }
     });
 
-    //TEMP-LOG: Log once per broadcast with client IDs
-    if (clientIds.length > 0) {
-      console.log(`[WebSocket] Broadcast ${suo.messageType} (msgId: ${suo.messageId}) to: [${clientIds.join(", ")}]`);
-    }
   }
 
   /**

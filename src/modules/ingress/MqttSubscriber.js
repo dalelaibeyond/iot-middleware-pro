@@ -7,7 +7,8 @@
 
 const mqtt = require("mqtt");
 const eventBus = require("../../core/EventBus");
-const { Console } = require("winston/lib/winston/transports");
+const config = require("config");
+const logger = require("../../core/Logger");
 
 class MqttSubscriber {
   constructor() {
@@ -121,39 +122,50 @@ class MqttSubscriber {
       // Determine device type from protocol
       const deviceType = protocol === "V5008Upload" ? "V5008" : "V6800";
 
+      // Debug: Log raw message
+      try {
+        const debugConfig = config.get("debug");
+        if (debugConfig && debugConfig.logRawMessage) {
+          if (deviceType === "V5008") {
+            logger.debug(
+              "------------RAW message received(V5008)---------------",
+              {
+                deviceType,
+                topic,
+                hex: message.toString("hex").toUpperCase(),
+              },
+            );
+          } else {
+            logger.debug(
+              "------------RAW message received(V6800)---------------",
+              {
+                deviceType,
+                topic,
+                json: message.toString(),
+              },
+            );
+          }
+        }
+      } catch (e) {
+        // Debug config not available, skip
+      }
+
       // Parse message based on device type
       let payload;
       if (deviceType === "V5008") {
-        console.log("=== MQTT MESSAGE HANDLING - V5008 ===");
-        console.log("[MqttSubscriber] DEBUG - Topic:", topic);
-        console.log(
-          "[MqttSubscriber] DEBUG - V5008 message (hex):",
-          message.toString("hex").toUpperCase(),
-        );
-        console.log("=== END MQTT MESSAGE HANDLING - V5008 ===");
-
         // V5008 sends binary data
         payload = message;
       } else {
         // V6800 sends JSON data
         const messageString = message.toString();
 
-        //console.log("=== MQTT MESSAGE HANDLING - V6800 ===");
-        //console.log("[MqttSubscriber] DEBUG - Topic:", topic);
-        //console.log(
-        //  "[MqttSubscriber] DEBUG - V6800 Raw message:",
-        //  messageString,
-        //);
-        //console.log("=== END MQTT MESSAGE HANDLING - V6800 ===");
-
         try {
           payload = JSON.parse(messageString);
         } catch (parseError) {
           console.error(
-            `Failed to parse JSON from ${topic}:`,
+            `[MqttSubscriber] Failed to parse JSON from ${topic}:`,
             parseError.message,
           );
-          console.error("Raw message content:", messageString);
           eventBus.emitError(parseError, "MqttSubscriber");
           return;
         }
@@ -169,16 +181,12 @@ class MqttSubscriber {
         timestamp: new Date(),
       };
 
-      //console.log("=== MQTT MESSAGE EMITTED ===");
-      //console.log("[MqttSubscriber] DEBUG - Emitting mqtt.message event");
-      //console.log("[MqttSubscriber] DEBUG - Device type:", deviceType);
-      //console.log("[MqttSubscriber] DEBUG - Device ID:", deviceId);
-      //console.log("[MqttSubscriber] DEBUG - Message type:", messageType);
-      //console.log("=== END MQTT MESSAGE EMITTED ===");
-
       eventBus.emitMqttMessage(mqttMessage);
     } catch (error) {
-      console.error(`Error handling message from ${topic}:`, error.message);
+      console.error(
+        `[MqttSubscriber] Error handling message from ${topic}:`,
+        error.message,
+      );
       eventBus.emitError(error, "MqttSubscriber");
     }
   }
