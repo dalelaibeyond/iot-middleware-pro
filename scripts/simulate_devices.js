@@ -657,6 +657,25 @@ function buildV6800Door(moduleIndex = 1) {
             moduleIndex: moduleIndex,
             state: `D1:${modState.door1Open ? '🔓' : '🔒'} D2:${modState.door2Open ? '🔓' : '🔒'}`
         };
+    } else {
+        // Single door (mod#1)
+        modState.door1Open = !modState.door1Open;
+        
+        return {
+            payload: JSON.stringify({
+                msg_type: 'door_state_changed_notify_req',
+                gateway_sn: DEVICES.v6800.id,
+                uuid_number: state.getNextMsgId(),
+                data: [{
+                    module_index: moduleIndex,
+                    module_sn: modConfig.moduleSn,
+                    new_state1: modState.door1Open ? 1 : 0,
+                    new_state2: 0
+                }]
+            }),
+            moduleIndex: moduleIndex,
+            state: modState.door1Open ? 'OPEN 🔓' : 'CLOSED 🔒'
+        };
     }
 }
 
@@ -775,15 +794,13 @@ class Simulator {
                 log('V6800', `Module #${index} registered (SN: ${mod.moduleSn})`, '📦');
             });
             
-            // V6800: Send initial heartbeat with all enabled modules
-            const heartbeatModules = v6800Mods.map(({ index }) => {
-                const mod = DEVICES.v6800.modules.find(m => m.index === index);
-                return {
-                    module_index: index,
-                    module_sn: mod.moduleSn,
-                    module_u_num: mod.rfid.totalSlots
-                };
-            });
+            // V6800: Send initial heartbeat with ALL modules (like V5008)
+            // This ensures all modules appear in the dashboard
+            const heartbeatModules = DEVICES.v6800.modules.map((mod) => ({
+                module_index: mod.index,
+                module_sn: mod.moduleSn,
+                module_u_num: mod.rfid.totalSlots
+            }));
             
             this.client.publish(
                 `V6800Upload/${DEVICES.v6800.id}/heart_beat_req`,
@@ -888,6 +905,57 @@ class Simulator {
                 });
             }, 30000 / SIMULATION_SPEED);
         }
+
+        // RFID Tag Changes every 45s - simulate attach/detach (V5008 mod#1 only for demo)
+        if (enabledMods.some(m => m.config.rfid)) {
+            setInterval(() => {
+                this.simulateV5008TagChange();
+            }, 45000 / SIMULATION_SPEED);
+        }
+    }
+
+    async simulateV5008TagChange() {
+        // Simulate tag attach/detach on first enabled V5008 module
+        const enabledMods = simConfig.getEnabledModules('v5008').filter(m => m.config.rfid);
+        if (enabledMods.length === 0) return;
+        
+        const { index } = enabledMods[0];
+        const modConfig = DEVICES.v5008.modules.find(m => m.index === index);
+        const modState = state.v5008.find(m => m.index === index);
+        if (!modConfig || !modState) return;
+
+        const tags = Array.from(modState.tags);
+        const action = Math.random() > 0.5 ? 'attach' : 'detach';
+        
+        if (action === 'attach' && tags.length < modConfig.rfid.totalSlots) {
+            // Find an empty slot
+            const available = [];
+            for (let i = 1; i <= modConfig.rfid.totalSlots; i++) {
+                if (!modState.tags.has(i)) available.push(i);
+            }
+            if (available.length > 0) {
+                const uPos = available[Math.floor(Math.random() * available.length)];
+                modState.tags.add(uPos);
+                const tag = TAG_DATABASE[(uPos - 1) % TAG_DATABASE.length];
+                log('EVENT', `🏷️ ATTACHED: ${tag.name} at slot ${uPos} (Mod#${index})`, '📎');
+            }
+        } else if (action === 'detach' && tags.length > 0) {
+            // Remove a random tag
+            const uPos = tags[Math.floor(Math.random() * tags.length)];
+            modState.tags.delete(uPos);
+            const tag = TAG_DATABASE[(uPos - 1) % TAG_DATABASE.length];
+            log('EVENT', `🏷️ DETACHED: ${tag.name} from slot ${uPos} (Mod#${index})`, '👋');
+        }
+        
+        // Send updated snapshot immediately after change
+        const result = buildV5008RfidSnapshot(index);
+        if (result) {
+            this.client.publish(
+                `V5008Upload/${DEVICES.v5008.id}/LabelState`,
+                result.buffer
+            );
+            log('V5008', `Mod#${result.moduleIndex} RFID: ${result.tagCount} tags [${result.tags.join(', ')}]`, '📋');
+        }
     }
 
     startV6800Loop() {
@@ -897,35 +965,30 @@ class Simulator {
             return;
         }
 
-        // Heartbeat every 5s - single message with ALL enabled modules
+        // Heartbeat every 5s - single message with ALL modules
         // IMPORTANT: The normalizer's reconcileMetadata treats heartbeat as authoritative
-        // for module presence, so we must include all enabled modules in one message
+        // for module presence, so we must include ALL modules in one message (like V5008)
+        // The config controls message types, not module existence
         if (enabledMods.some(m => m.config.heartbeat)) {
             setInterval(() => {
-                // Build heartbeat with only modules that have heartbeat enabled
-                const heartbeatModules = enabledMods
-                    .filter(({ config }) => config.heartbeat)
-                    .map(({ index }) => {
-                        const mod = DEVICES.v6800.modules.find(m => m.index === index);
-                        return {
-                            module_index: index,
-                            module_sn: mod.moduleSn,
-                            module_u_num: mod.rfid.totalSlots
-                        };
-                    });
+                // Build heartbeat with ALL modules (not just enabled ones)
+                // This ensures the dashboard shows all modules like V5008
+                const heartbeatModules = DEVICES.v6800.modules.map((mod) => ({
+                    module_index: mod.index,
+                    module_sn: mod.moduleSn,
+                    module_u_num: mod.rfid.totalSlots
+                }));
                 
-                if (heartbeatModules.length > 0) {
-                    this.client.publish(
-                        `V6800Upload/${DEVICES.v6800.id}/heart_beat_req`,
-                        JSON.stringify({
-                            msg_type: 'heart_beat_req',
-                            gateway_sn: DEVICES.v6800.id,
-                            uuid_number: state.getNextMsgId(),
-                            data: heartbeatModules
-                        })
-                    );
-                    log('V6800', `Heartbeat: ${heartbeatModules.length} modules`, '💓');
-                }
+                this.client.publish(
+                    `V6800Upload/${DEVICES.v6800.id}/heart_beat_req`,
+                    JSON.stringify({
+                        msg_type: 'heart_beat_req',
+                        gateway_sn: DEVICES.v6800.id,
+                        uuid_number: state.getNextMsgId(),
+                        data: heartbeatModules
+                    })
+                );
+                log('V6800', `Heartbeat: ${heartbeatModules.length} modules`, '💓');
             }, 5000 / SIMULATION_SPEED);
         }
 
@@ -978,6 +1041,55 @@ class Simulator {
                     }
                 });
             }, 30000 / SIMULATION_SPEED);
+        }
+
+        // RFID Tag Changes every 50s - simulate attach/detach (V6800 first enabled module)
+        if (enabledMods.some(m => m.config.rfid)) {
+            setInterval(() => {
+                this.simulateV6800TagChange();
+            }, 50000 / SIMULATION_SPEED);
+        }
+    }
+
+    async simulateV6800TagChange() {
+        // Simulate tag attach/detach on first enabled V6800 module
+        const enabledMods = simConfig.getEnabledModules('v6800').filter(m => m.config.rfid);
+        if (enabledMods.length === 0) return;
+        
+        const { index } = enabledMods[0];
+        const modConfig = DEVICES.v6800.modules.find(m => m.index === index);
+        const modState = state.v6800.find(m => m.index === index);
+        if (!modConfig || !modState) return;
+
+        const tags = Array.from(modState.tags);
+        const action = Math.random() > 0.5 ? 'attach' : 'detach';
+        
+        if (action === 'attach' && tags.length < modConfig.rfid.totalSlots) {
+            const available = [];
+            for (let i = 1; i <= modConfig.rfid.totalSlots; i++) {
+                if (!modState.tags.has(i)) available.push(i);
+            }
+            if (available.length > 0) {
+                const uPos = available[Math.floor(Math.random() * available.length)];
+                modState.tags.add(uPos);
+                const tag = TAG_DATABASE[(uPos - 1) % TAG_DATABASE.length];
+                log('EVENT', `🏷️ ATTACHED: ${tag.name} at slot ${uPos} (V6800 Mod#${index})`, '📎');
+            }
+        } else if (action === 'detach' && tags.length > 0) {
+            const uPos = tags[Math.floor(Math.random() * tags.length)];
+            modState.tags.delete(uPos);
+            const tag = TAG_DATABASE[(uPos - 1) % TAG_DATABASE.length];
+            log('EVENT', `🏷️ DETACHED: ${tag.name} from slot ${uPos} (V6800 Mod#${index})`, '👋');
+        }
+        
+        // Send updated snapshot immediately
+        const payload = buildV6800RfidSnapshot(index);
+        if (payload) {
+            this.client.publish(
+                `V6800Upload/${DEVICES.v6800.id}/u_state_resp`,
+                payload
+            );
+            log('V6800', `Mod#${index} RFID: ${modState.tags.size} tags present`, '📋');
         }
     }
 
