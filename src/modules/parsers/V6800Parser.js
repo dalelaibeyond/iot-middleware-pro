@@ -141,18 +141,6 @@ class V6800Parser {
         sif.data = data;
       }
 
-      // For V6800 messages with module data, extract moduleIndex and moduleId to SIF top level
-      // This is needed for command routing (e.g., QRY_RFID_SNAPSHOT needs moduleId)
-      if (data && Array.isArray(data) && data.length > 0) {
-        const firstItem = data[0];
-        if (firstItem.moduleIndex !== undefined) {
-          sif.moduleIndex = firstItem.moduleIndex;
-        }
-        if (firstItem.moduleId !== undefined) {
-          sif.moduleId = firstItem.moduleId;
-        }
-      }
-
       return sif;
     } catch (error) {
       console.error(`V6800Parser error:`, error.message);
@@ -420,18 +408,26 @@ class V6800Parser {
           dataArray.forEach((thItem) => {
             const thIndex =
               thItem.temper_position !== undefined ? thItem.temper_position : 0;
-            const temp =
+            let temp =
               thItem.temper_swot !== undefined
                 ? thItem.temper_swot === 0
                   ? null
                   : thItem.temper_swot
                 : null;
-            const hum =
+            let hum =
               thItem.hygrometer_swot !== undefined
                 ? thItem.hygrometer_swot === 0
                   ? null
                   : thItem.hygrometer_swot
                 : null;
+
+            // Round to 1 decimal place to avoid floating point precision issues
+            if (temp !== null) {
+              temp = Math.round(temp * 10) / 10;
+            }
+            if (hum !== null) {
+              hum = Math.round(hum * 10) / 10;
+            }
 
             thData.push({
               thIndex: thIndex,
@@ -496,56 +492,64 @@ class V6800Parser {
   /**
    * Parse QRY_DOOR_STATE_RESP message (door_state_resp)
    * @param {Object} json - Parsed JSON message
-   * @returns {Object} Parsed door state query response
+   * @returns {Object} Parsed door state query response with unified format
    */
   parseDoorStateQuery(json) {
-    const result = {
-      moduleIndex: 0,
-      moduleId: "",
-    };
+    const readings = [];
 
     // Handle two possible formats:
     // 1. Data array format (standard V6800 response)
     // 2. Top-level fields format (direct response)
 
     if (json.data && Array.isArray(json.data) && json.data.length > 0) {
-      // Standard format with data array
-      const item = json.data[0];
-      result.moduleIndex = this.extractModuleIndex(item);
-      result.moduleId = this.extractModuleId(item);
+      // Standard format with data array - process all modules
+      json.data.forEach((item) => {
+        const reading = {
+          moduleIndex: this.extractModuleIndex(item),
+          moduleId: this.extractModuleId(item),
+        };
 
-      // Check for dual door
-      if (item.new_state1 !== undefined || item.new_state2 !== undefined) {
-        if (item.new_state1 !== undefined) {
-          result.door1State = item.new_state1;
+        // Check for dual door
+        if (item.new_state1 !== undefined || item.new_state2 !== undefined) {
+          if (item.new_state1 !== undefined) {
+            reading.door1State = item.new_state1;
+          }
+          if (item.new_state2 !== undefined) {
+            reading.door2State = item.new_state2;
+          }
+        } else if (item.new_state !== undefined) {
+          // Single door
+          reading.doorState = item.new_state;
         }
-        if (item.new_state2 !== undefined) {
-          result.door2State = item.new_state2;
-        }
-      } else if (item.new_state !== undefined) {
-        // Single door
-        result.doorState = item.new_state;
-      }
+
+        readings.push(reading);
+      });
     } else {
       // Direct response format with top-level fields
-      result.moduleIndex = this.extractModuleIndex(json);
-      result.moduleId = this.extractModuleId(json);
+      const reading = {
+        moduleIndex: this.extractModuleIndex(json),
+        moduleId: this.extractModuleId(json),
+      };
 
       // Check for dual door
       if (json.new_state1 !== undefined || json.new_state2 !== undefined) {
         if (json.new_state1 !== undefined) {
-          result.door1State = json.new_state1;
+          reading.door1State = json.new_state1;
         }
         if (json.new_state2 !== undefined) {
-          result.door2State = json.new_state2;
+          reading.door2State = json.new_state2;
         }
       } else if (json.new_state !== undefined) {
         // Single door
-        result.doorState = json.new_state;
+        reading.doorState = json.new_state;
       }
+
+      readings.push(reading);
     }
 
-    return result;
+    // Return readings array directly (aligned with V5008)
+    // The main parse() function will wrap this in { data: readings }
+    return readings;
   }
 
   /**

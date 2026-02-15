@@ -497,12 +497,14 @@ class V5008Parser {
     const modId = buffer.readUInt32BE(2).toString();
     const doorState = buffer.readUInt8(6);
 
-    // Return object with top-level fields (per spec, NO data array)
+    // Return unified format with data array (aligned with V6800)
     // Note: Business logic validation (modAddr range, modId non-zero) is handled in UnifyNormalizer
     return {
-      moduleIndex: modAddr,
-      moduleId: modId,
-      doorState: doorState,
+      data: [{
+        moduleIndex: modAddr,
+        moduleId: modId,
+        doorState: doorState,
+      }]
     };
   }
 

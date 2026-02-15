@@ -136,14 +136,15 @@ class MqttSubscriber {
               },
             );
           } else {
-            logger.debug(
-              "------------RAW message received(V6800)---------------",
-              {
-                deviceType,
-                topic,
-                json: message.toString(),
-              },
-            );
+            // V6800
+            logger.debug("------------RAW message received(V6800)---------------",JSON.parse(message.toString()) );
+            //console.log(JSON.parse(message.toString()));
+            //   {
+            //     deviceType,
+            //     topic,
+            //     json: message.toString(),
+            //   },
+            // );
           }
         }
       } catch (e) {

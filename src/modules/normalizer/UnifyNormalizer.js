@@ -46,6 +46,60 @@ class UnifyNormalizer {
   }
 
   /**
+   * Extract modules from SIF with unified format
+   * Handles both V5008 (top-level) and V6800 (nested) formats
+   * 
+   * @param {Object} sif - Standard Intermediate Format
+   * @param {string} readingKey - Key for nested readings (e.g., 'data', or null for flat)
+   * @returns {Array} Array of {moduleIndex, moduleId, readings}
+   */
+  extractModules(sif, readingKey = 'data') {
+    const { data, moduleIndex, moduleId } = sif;
+    const modules = [];
+
+    // V6800 style: data is array of modules, each with moduleIndex/moduleId
+    if (Array.isArray(data) && data.length > 0 && data[0].moduleIndex !== undefined) {
+      for (const moduleData of data) {
+        const readings = readingKey && moduleData[readingKey] !== undefined 
+          ? moduleData[readingKey] 
+          : [moduleData]; // If no nested key, treat module itself as reading
+        modules.push({
+          moduleIndex: moduleData.moduleIndex,
+          moduleId: moduleData.moduleId,
+          readings: Array.isArray(readings) ? readings : [readings]
+        });
+      }
+      return modules;
+    }
+
+    // V5008 style: single module at top level
+    if (moduleIndex !== undefined && moduleId !== undefined) {
+      const readings = readingKey && data !== undefined
+        ? (Array.isArray(data) ? data : [data])
+        : [sif];
+      modules.push({
+        moduleIndex,
+        moduleId,
+        readings: Array.isArray(readings) ? readings : [readings]
+      });
+      return modules;
+    }
+
+    // V5008 QRY_DOOR_STATE_RESP style: data is object with moduleIndex/moduleId
+    if (data && typeof data === 'object' && !Array.isArray(data) && 
+        data.moduleIndex !== undefined && data.moduleId !== undefined) {
+      modules.push({
+        moduleIndex: data.moduleIndex,
+        moduleId: data.moduleId,
+        readings: [data]
+      });
+      return modules;
+    }
+
+    return modules;
+  }
+
+  /**
    * Normalize SIF to SUO
    * @param {Object} sif - Standard Intermediate Format
    */
@@ -213,39 +267,22 @@ class UnifyNormalizer {
 
   /**
    * Handle RFID_SNAPSHOT with global diffing
+   * Unified handling for V5008 (top-level) and V6800 (nested) formats
    * @param {Object} sif - Standard Intermediate Format
    */
   handleRfidSnapshot(sif) {
-    const { deviceId, deviceType, messageId, data, moduleIndex, moduleId } =
-      sif;
-    // Use SIF messageId for RFID_EVENT as well
+    const { deviceId, deviceType, messageId } = sif;
     const rfidEventMessageId = messageId;
 
-    // Check if data has nested structure (V6800) or flat structure (V5008)
-    const hasNestedData =
-      data && data.length > 0 && data[0].data && Array.isArray(data[0].data);
+    // Extract modules using unified format
+    const modules = this.extractModules(sif, 'data');
 
-    // Check if this is V5008 style (top-level fields merged into SIF)
-    // Note: V6800 now also has top-level moduleIndex/moduleId, so we must check
-    // hasNestedData FIRST. V5008 style means flat data without nested structure.
-    const isV5008Style =
-      !hasNestedData &&
-      moduleIndex !== undefined &&
-      moduleId !== undefined &&
-      data &&
-      Array.isArray(data);
-
-    if (isV5008Style) {
-      // V5008 style: top-level fields (moduleIndex, moduleId) are merged into SIF
+    for (const { moduleIndex, moduleId, readings } of modules) {
       // Get previous snapshot from cache
-      const previousSnapshot = this.stateCache.getRfidSnapshot(
-        deviceId,
-        moduleIndex,
-      );
+      const previousSnapshot = this.stateCache.getRfidSnapshot(deviceId, moduleIndex);
 
       // Normalize current snapshot (map uIndex to sensorIndex)
-      // Note: moduleIndex and moduleId are at SUO root level, not in payload items
-      const currentSnapshot = data.map((item) => ({
+      const currentSnapshot = readings.map((item) => ({
         sensorIndex: item.uIndex || item.sensorIndex,
         tagId: item.tagId,
         isAlarm: item.isAlarm || false,
@@ -264,14 +301,12 @@ class UnifyNormalizer {
             messageId: rfidEventMessageId,
             moduleIndex: event.moduleIndex,
             moduleId: event.moduleId,
-            payload: [
-              {
-                sensorIndex: event.sensorIndex,
-                tagId: event.tagId,
-                action: event.action,
-                isAlarm: event.isAlarm || false,
-              },
-            ],
+            payload: [{
+              sensorIndex: event.sensorIndex,
+              tagId: event.tagId,
+              action: event.action,
+              isAlarm: event.isAlarm || false,
+            }],
           });
           eventBus.emitDataNormalized(eventSuo);
         });
@@ -298,247 +333,6 @@ class UnifyNormalizer {
         currentSnapshot,
         "lastSeenRfid",
       );
-    } else if (hasNestedData) {
-      // V6800 style: nested structure with module.data containing array of readings
-      data.forEach((moduleData) => {
-        const { moduleIndex, moduleId, data: rfidData } = moduleData;
-
-        // Defensive check: ensure rfidData is an array
-        if (!rfidData || !Array.isArray(rfidData)) {
-          console.warn(
-            `[UnifyNormalizer] Invalid or missing RFID snapshot data for device ${deviceId}, module ${moduleIndex}`,
-          );
-          return;
-        }
-
-        // Get previous snapshot from cache
-        const previousSnapshot = this.stateCache.getRfidSnapshot(
-          deviceId,
-          moduleIndex,
-        );
-
-        // Normalize current snapshot (map uIndex to sensorIndex)
-        // Note: moduleIndex and moduleId are at SUO root level, not in payload items
-        const currentSnapshot = rfidData.map((item) => ({
-          sensorIndex: item.uIndex || item.sensorIndex,
-          tagId: item.tagId,
-          isAlarm: item.isAlarm || false,
-        }));
-
-        // Compare and emit events for differences
-        const events = this.diffRfidSnapshots(
-          previousSnapshot,
-          currentSnapshot,
-        );
-
-        if (events.length > 0) {
-          // Emit RFID_EVENT for each difference
-          events.forEach((event) => {
-            const eventSuo = this.createSuo({
-              deviceId,
-              deviceType,
-              messageType: "RFID_EVENT",
-              messageId: rfidEventMessageId,
-              moduleIndex: event.moduleIndex,
-              moduleId: event.moduleId,
-              payload: [
-                {
-                  sensorIndex: event.sensorIndex,
-                  tagId: event.tagId,
-                  action: event.action,
-                  isAlarm: event.isAlarm || false,
-                },
-              ],
-            });
-            eventBus.emitDataNormalized(eventSuo);
-          });
-        }
-
-        // Emit full RFID_SNAPSHOT SUO for database
-        const snapshotSuo = this.createSuo({
-          deviceId,
-          deviceType,
-          messageType: "RFID_SNAPSHOT",
-          messageId,
-          moduleIndex,
-          moduleId,
-          payload: currentSnapshot,
-        });
-        eventBus.emitDataNormalized(snapshotSuo);
-
-        // Update cache with new snapshot
-        this.stateCache.updateTelemetryField(
-          deviceId,
-          deviceType,
-          moduleIndex,
-          "rfidSnapshot",
-          currentSnapshot,
-          "lastSeenRfid",
-        );
-      });
-    } else if (
-      data &&
-      typeof data === "object" &&
-      !Array.isArray(data) &&
-      data.data
-    ) {
-      // V5008 style: object with top-level fields and data array
-      const {
-        moduleIndex,
-        moduleId,
-        uTotal,
-        onlineCount,
-        data: rfidData,
-      } = data;
-
-      // Defensive check: ensure rfidData is an array
-      if (!rfidData || !Array.isArray(rfidData)) {
-        console.warn(
-          `[UnifyNormalizer] Invalid or missing RFID snapshot data for device ${deviceId}, module ${moduleIndex}`,
-        );
-        return;
-      }
-
-      // Get previous snapshot from cache
-      const previousSnapshot = this.stateCache.getRfidSnapshot(
-        deviceId,
-        moduleIndex,
-      );
-
-      // Normalize current snapshot (map uIndex to sensorIndex)
-      // Note: moduleIndex and moduleId are at SUO root level, not in payload items
-      const currentSnapshot = rfidData.map((item) => ({
-        sensorIndex: item.uIndex || item.sensorIndex,
-        tagId: item.tagId,
-        isAlarm: item.isAlarm || false,
-      }));
-
-      // Compare and emit events for differences
-      const events = this.diffRfidSnapshots(previousSnapshot, currentSnapshot);
-
-      if (events.length > 0) {
-        // Emit RFID_EVENT for each difference
-        events.forEach((event) => {
-          const eventSuo = this.createSuo({
-            deviceId,
-            deviceType,
-            messageType: "RFID_EVENT",
-            messageId: rfidEventMessageId,
-            moduleIndex: event.moduleIndex,
-            moduleId: event.moduleId,
-            payload: [
-              {
-                sensorIndex: event.sensorIndex,
-                tagId: event.tagId,
-                action: event.action,
-                isAlarm: event.isAlarm || false,
-              },
-            ],
-          });
-          eventBus.emitDataNormalized(eventSuo);
-        });
-      }
-
-      // Emit full RFID_SNAPSHOT SUO for database
-      const snapshotSuo = this.createSuo({
-        deviceId,
-        deviceType,
-        messageType: "RFID_SNAPSHOT",
-        messageId,
-        moduleIndex,
-        moduleId,
-        payload: currentSnapshot,
-      });
-      eventBus.emitDataNormalized(snapshotSuo);
-
-      // Update cache with new snapshot
-      this.stateCache.updateTelemetryField(
-        deviceId,
-        deviceType,
-        moduleIndex,
-        "rfidSnapshot",
-        currentSnapshot,
-        "lastSeenRfid",
-      );
-    } else {
-      // V5008 style: flat structure where each item is a single reading
-      // Group readings by moduleIndex
-      const moduleReadings = new Map();
-      data.forEach((reading) => {
-        const { moduleIndex, moduleId } = reading;
-        if (!moduleReadings.has(moduleIndex)) {
-          moduleReadings.set(moduleIndex, { moduleId, readings: [] });
-        }
-        moduleReadings.get(moduleIndex).readings.push(reading);
-      });
-
-      // Process each module's readings
-      moduleReadings.forEach(({ moduleId, readings }, moduleIndex) => {
-        // Get previous snapshot from cache
-        const previousSnapshot = this.stateCache.getRfidSnapshot(
-          deviceId,
-          moduleIndex,
-        );
-
-        // Normalize current snapshot (map uIndex to sensorIndex)
-        // Note: moduleIndex and moduleId are at SUO root level, not in payload items
-        const currentSnapshot = readings.map((item) => ({
-          sensorIndex: item.uIndex || item.sensorIndex,
-          tagId: item.tagId,
-          isAlarm: item.isAlarm || false,
-        }));
-
-        // Compare and emit events for differences
-        const events = this.diffRfidSnapshots(
-          previousSnapshot,
-          currentSnapshot,
-        );
-
-        if (events.length > 0) {
-          // Emit RFID_EVENT for each difference
-          events.forEach((event) => {
-            const eventSuo = this.createSuo({
-              deviceId,
-              deviceType,
-              messageType: "RFID_EVENT",
-              messageId: rfidEventMessageId,
-              moduleIndex: event.moduleIndex,
-              moduleId: event.moduleId,
-              payload: [
-                {
-                  sensorIndex: event.sensorIndex,
-                  tagId: event.tagId,
-                  action: event.action,
-                  isAlarm: event.isAlarm || false,
-                },
-              ],
-            });
-            eventBus.emitDataNormalized(eventSuo);
-          });
-        }
-
-        // Emit full RFID_SNAPSHOT SUO for database
-        const snapshotSuo = this.createSuo({
-          deviceId,
-          deviceType,
-          messageType: "RFID_SNAPSHOT",
-          messageId,
-          moduleIndex,
-          moduleId,
-          payload: currentSnapshot,
-        });
-        eventBus.emitDataNormalized(snapshotSuo);
-
-        // Update cache with new snapshot
-        this.stateCache.updateTelemetryField(
-          deviceId,
-          deviceType,
-          moduleIndex,
-          "rfidSnapshot",
-          currentSnapshot,
-          "lastSeenRfid",
-        );
-      });
     }
   }
 
@@ -647,88 +441,17 @@ class UnifyNormalizer {
 
   /**
    * Handle TEMP_HUM message
+   * Unified handling for V5008 (top-level) and V6800 (nested) formats
    * @param {Object} sif - Standard Intermediate Format
    */
   handleTempHum(sif) {
-    const { deviceId, deviceType, messageId, data, moduleIndex, moduleId } =
-      sif;
+    const { deviceId, deviceType, messageId } = sif;
 
-    // Check if data has nested structure (V6800) or flat structure (V5008)
-    const hasNestedData =
-      data && data.length > 0 && data[0].data && Array.isArray(data[0].data);
+    // Extract modules using unified format
+    const modules = this.extractModules(sif, 'data');
 
-    if (hasNestedData) {
-      // V6800 style: nested structure with module.data containing array of readings
-      data.forEach((moduleData) => {
-        const { moduleIndex, moduleId, data: thData } = moduleData;
-
-        // Defensive check: ensure thData is an array
-        if (!thData || !Array.isArray(thData)) {
-          console.warn(
-            `[UnifyNormalizer] Invalid or missing temp/hum data for device ${deviceId}, module ${moduleIndex}`,
-          );
-          return;
-        }
-
-        const normalizedData = thData
-          .map((item) => ({
-            sensorIndex: item.thIndex || item.sensorIndex,
-            temp: item.temp,
-            hum: item.hum,
-          }))
-          .filter((item) => {
-            // Filter out readings where both temp and hum are 0 or null
-            const tempValid =
-              item.temp !== null && item.temp !== undefined && item.temp !== 0;
-            const humValid =
-              item.hum !== null && item.hum !== undefined && item.hum !== 0;
-            return tempValid || humValid; // Keep if at least one value is valid
-          });
-
-        // Skip if no valid readings remain
-        if (normalizedData.length === 0) {
-          return;
-        }
-
-        const suo = this.createSuo({
-          deviceId,
-          deviceType,
-          messageType: "TEMP_HUM",
-          messageId,
-          moduleIndex,
-          moduleId,
-          payload: normalizedData,
-        });
-        eventBus.emitDataNormalized(suo);
-
-        // Update cache
-        this.stateCache.updateTelemetryField(
-          deviceId,
-          deviceType,
-          moduleIndex,
-          "tempHum",
-          normalizedData,
-          "lastSeenTh",
-        );
-      });
-    } else if (
-      data &&
-      typeof data === "object" &&
-      !Array.isArray(data) &&
-      data.data
-    ) {
-      // V5008 style: object with top-level fields and data array
-      const { moduleIndex, moduleId, data: thData } = data;
-
-      // Defensive check: ensure thData is an array
-      if (!thData || !Array.isArray(thData)) {
-        console.warn(
-          `[UnifyNormalizer] Invalid or missing temp/hum data for device ${deviceId}, module ${moduleIndex}`,
-        );
-        return;
-      }
-
-      const normalizedData = thData
+    for (const { moduleIndex, moduleId, readings } of modules) {
+      const normalizedData = readings
         .map((item) => ({
           sensorIndex: item.thIndex || item.sensorIndex,
           temp: item.temp,
@@ -740,13 +463,10 @@ class UnifyNormalizer {
             item.temp !== null && item.temp !== undefined && item.temp !== 0;
           const humValid =
             item.hum !== null && item.hum !== undefined && item.hum !== 0;
-          return tempValid || humValid; // Keep if at least one value is valid
+          return tempValid || humValid;
         });
 
-      // Skip if no valid readings remain
-      if (normalizedData.length === 0) {
-        return;
-      }
+      if (normalizedData.length === 0) continue;
 
       const suo = this.createSuo({
         deviceId,
@@ -759,7 +479,6 @@ class UnifyNormalizer {
       });
       eventBus.emitDataNormalized(suo);
 
-      // Update cache
       this.stateCache.updateTelemetryField(
         deviceId,
         deviceType,
@@ -768,215 +487,31 @@ class UnifyNormalizer {
         normalizedData,
         "lastSeenTh",
       );
-    } else if (
-      moduleIndex !== undefined &&
-      moduleId !== undefined &&
-      data &&
-      Array.isArray(data)
-    ) {
-      // V5008 style: top-level moduleIndex/moduleId with data array of readings
-      // One SIF -> One SUO with all readings in payload
-
-      // Defensive check: ensure data is an array
-      if (!data || !Array.isArray(data)) {
-        console.warn(
-          `[UnifyNormalizer] Invalid or missing temp/hum data for device ${deviceId}, module ${moduleIndex}`,
-        );
-        return;
-      }
-
-      const normalizedData = data
-        .map((item) => ({
-          sensorIndex: item.thIndex || item.sensorIndex,
-          temp: item.temp,
-          hum: item.hum,
-        }))
-        .filter((item) => {
-          // Filter out readings where both temp and hum are 0 or null
-          const tempValid =
-            item.temp !== null && item.temp !== undefined && item.temp !== 0;
-          const humValid =
-            item.hum !== null && item.hum !== undefined && item.hum !== 0;
-          return tempValid || humValid; // Keep if at least one value is valid
-        });
-
-      // Skip if no valid readings remain
-      if (normalizedData.length === 0) {
-        return;
-      }
-
-      const suo = this.createSuo({
-        deviceId,
-        deviceType,
-        messageType: "TEMP_HUM",
-        messageId,
-        moduleIndex,
-        moduleId,
-        payload: normalizedData,
-      });
-      eventBus.emitDataNormalized(suo);
-
-      // Update cache
-      this.stateCache.updateTelemetryField(
-        deviceId,
-        deviceType,
-        moduleIndex,
-        "tempHum",
-        normalizedData,
-        "lastSeenTh",
-      );
-    } else {
-      // V5008 style: flat structure where each item has its own moduleIndex/moduleId
-      // Group readings by moduleIndex and emit one SUO per module
-      const moduleReadings = new Map();
-      data.forEach((reading) => {
-        const { moduleIndex, moduleId } = reading;
-        if (!moduleReadings.has(moduleIndex)) {
-          moduleReadings.set(moduleIndex, { moduleId, readings: [] });
-        }
-        moduleReadings.get(moduleIndex).readings.push(reading);
-      });
-
-      // Process each module's readings - emit one SUO per module
-      moduleReadings.forEach(({ moduleId, readings }, moduleIndex) => {
-        const normalizedData = readings
-          .map((item) => ({
-            sensorIndex: item.thIndex || item.sensorIndex,
-            temp: item.temp,
-            hum: item.hum,
-          }))
-          .filter((item) => {
-            // Filter out readings where both temp and hum are 0 or null
-            const tempValid =
-              item.temp !== null && item.temp !== undefined && item.temp !== 0;
-            const humValid =
-              item.hum !== null && item.hum !== undefined && item.hum !== 0;
-            return tempValid || humValid; // Keep if at least one value is valid
-          });
-
-        // Skip if no valid readings remain
-        if (normalizedData.length === 0) {
-          return;
-        }
-
-        const suo = this.createSuo({
-          deviceId,
-          deviceType,
-          messageType: "TEMP_HUM",
-          messageId,
-          moduleIndex,
-          moduleId,
-          payload: normalizedData,
-        });
-        eventBus.emitDataNormalized(suo);
-
-        // Update cache
-        this.stateCache.updateTelemetryField(
-          deviceId,
-          deviceType,
-          moduleIndex,
-          "tempHum",
-          normalizedData,
-          "lastSeenTh",
-        );
-      });
     }
   }
 
   /**
    * Handle NOISE_LEVEL message
+   * Unified handling for V5008 (top-level) and V6800 (nested) formats
    * @param {Object} sif - Standard Intermediate Format
    */
   handleNoiseLevel(sif) {
-    const { deviceId, deviceType, messageId, data, moduleIndex, moduleId } =
-      sif;
+    const { deviceId, deviceType, messageId } = sif;
 
-    // Check if data has nested structure (V6800) or flat structure (V5008)
-    const hasNestedData =
-      data && data.length > 0 && data[0].data && Array.isArray(data[0].data);
+    // Extract modules using unified format
+    const modules = this.extractModules(sif, 'data');
 
-    if (hasNestedData) {
-      // V6800 style: nested structure with module.data containing array of readings
-      data.forEach((moduleData) => {
-        const { moduleIndex, moduleId, data: nsData } = moduleData;
-
-        // Defensive check: ensure nsData is an array
-        if (!nsData || !Array.isArray(nsData)) {
-          console.warn(
-            `[UnifyNormalizer] Invalid or missing noise level data for device ${deviceId}, module ${moduleIndex}`,
-          );
-          return;
-        }
-
-        const normalizedData = nsData
-          .map((item) => ({
-            sensorIndex: item.nsIndex || item.sensorIndex,
-            noise: item.noise,
-          }))
-          .filter((item) => {
-            // Filter out readings where noise is null
-            // Parser returns null for 0x00 raw values
-            return item.noise !== null && item.noise !== undefined;
-          });
-
-        // Skip if no valid readings remain
-        if (normalizedData.length === 0) {
-          return;
-        }
-
-        const suo = this.createSuo({
-          deviceId,
-          deviceType,
-          messageType: "NOISE_LEVEL",
-          messageId,
-          moduleIndex,
-          moduleId,
-          payload: normalizedData,
-        });
-        eventBus.emitDataNormalized(suo);
-
-        // Update cache
-        this.stateCache.updateTelemetryField(
-          deviceId,
-          deviceType,
-          moduleIndex,
-          "noiseLevel",
-          normalizedData,
-          "lastSeenNs",
-        );
-      });
-    } else if (
-      data &&
-      typeof data === "object" &&
-      !Array.isArray(data) &&
-      data.data
-    ) {
-      // V5008 style: object with top-level fields and data array
-      const { moduleIndex, moduleId, data: nsData } = data;
-
-      // Defensive check: ensure nsData is an array
-      if (!nsData || !Array.isArray(nsData)) {
-        console.warn(
-          `[UnifyNormalizer] Invalid or missing noise level data for device ${deviceId}, module ${moduleIndex}`,
-        );
-        return;
-      }
-
-      const normalizedData = nsData
+    for (const { moduleIndex, moduleId, readings } of modules) {
+      const normalizedData = readings
         .map((item) => ({
           sensorIndex: item.nsIndex || item.sensorIndex,
           noise: item.noise,
         }))
         .filter((item) => {
-          // Filter out readings where noise is null
-          // Parser returns null for 0x00 raw values
           return item.noise !== null && item.noise !== undefined;
         });
 
-      // Skip if no valid readings remain
-      if (normalizedData.length === 0) {
-        return;
-      }
+      if (normalizedData.length === 0) continue;
 
       const suo = this.createSuo({
         deviceId,
@@ -989,7 +524,6 @@ class UnifyNormalizer {
       });
       eventBus.emitDataNormalized(suo);
 
-      // Update cache
       this.stateCache.updateTelemetryField(
         deviceId,
         deviceType,
@@ -998,197 +532,35 @@ class UnifyNormalizer {
         normalizedData,
         "lastSeenNs",
       );
-    } else if (
-      moduleIndex !== undefined &&
-      moduleId !== undefined &&
-      data &&
-      Array.isArray(data)
-    ) {
-      // V5008 style: top-level moduleIndex/moduleId with data array of readings
-      // One SIF -> One SUO with all readings in payload
-
-      // Defensive check: ensure data is an array
-      if (!data || !Array.isArray(data)) {
-        console.warn(
-          `[UnifyNormalizer] Invalid or missing noise level data for device ${deviceId}, module ${moduleIndex}`,
-        );
-        return;
-      }
-
-      const normalizedData = data
-        .map((item) => ({
-          sensorIndex: item.nsIndex || item.sensorIndex,
-          noise: item.noise,
-        }))
-        .filter((item) => {
-          // Filter out readings where noise is null
-          // Parser returns null for 0x00 raw values
-          return item.noise !== null && item.noise !== undefined;
-        });
-
-      // Skip if no valid readings remain
-      if (normalizedData.length === 0) {
-        return;
-      }
-
-      const suo = this.createSuo({
-        deviceId,
-        deviceType,
-        messageType: "NOISE_LEVEL",
-        messageId,
-        moduleIndex,
-        moduleId,
-        payload: normalizedData,
-      });
-      eventBus.emitDataNormalized(suo);
-
-      // Update cache
-      this.stateCache.updateTelemetryField(
-        deviceId,
-        deviceType,
-        moduleIndex,
-        "noiseLevel",
-        normalizedData,
-        "lastSeenNs",
-      );
-    } else {
-      // V5008 style: flat structure where each item has its own moduleIndex/moduleId
-      // Group readings by moduleIndex and emit one SUO per module
-      const moduleReadings = new Map();
-      data.forEach((reading) => {
-        const { moduleIndex, moduleId } = reading;
-        if (!moduleReadings.has(moduleIndex)) {
-          moduleReadings.set(moduleIndex, { moduleId, readings: [] });
-        }
-        moduleReadings.get(moduleIndex).readings.push(reading);
-      });
-
-      // Process each module's readings - emit one SUO per module
-      moduleReadings.forEach(({ moduleId, readings }, moduleIndex) => {
-        const normalizedData = readings
-          .map((item) => ({
-            sensorIndex: item.nsIndex || item.sensorIndex,
-            noise: item.noise,
-          }))
-          .filter((item) => {
-            // Filter out readings where noise is 0 or null
-            return (
-              item.noise !== null &&
-              item.noise !== undefined &&
-              item.noise !== 0
-            );
-          });
-
-        // Skip if no valid readings remain
-        if (normalizedData.length === 0) {
-          return;
-        }
-
-        const suo = this.createSuo({
-          deviceId,
-          deviceType,
-          messageType: "NOISE_LEVEL",
-          messageId,
-          moduleIndex,
-          moduleId,
-          payload: normalizedData,
-        });
-        eventBus.emitDataNormalized(suo);
-
-        // Update cache
-        this.stateCache.updateTelemetryField(
-          deviceId,
-          deviceType,
-          moduleIndex,
-          "noiseLevel",
-          normalizedData,
-          "lastSeenNs",
-        );
-      });
     }
   }
 
   /**
    * Handle DOOR_STATE message
+   * Unified handling for V5008 and V6800 (both now use data array format)
    * @param {Object} sif - Standard Intermediate Format
    */
   handleDoorState(sif) {
-    const {
-      deviceId,
-      deviceType,
-      messageId,
-      data,
-      moduleIndex,
-      moduleId,
-      doorState,
-      door1State,
-      door2State,
-    } = sif;
+    const { deviceId, deviceType, messageId } = sif;
 
-    // Check if data is an array (V6800) or object with top-level fields (V5008)
-    if (data && Array.isArray(data)) {
-      // V6800 style: array of module data
-      data.forEach((moduleData) => {
-        const { moduleIndex, moduleId } = moduleData;
+    // Extract modules using unified format (both V5008 and V6800 now return {data: [...]})
+    const modules = this.extractModules(sif, null);
 
-        // Business logic validation: modAddr must be [1-5] and modId must not be 0
-        if (moduleIndex < 1 || moduleIndex > 5 || moduleId === "0") {
-          console.warn(
-            `[UnifyNormalizer] Invalid door state data for device ${deviceId}: moduleIndex=${moduleIndex}, moduleId=${moduleId}. Skipping.`,
-          );
-          return;
-        }
-
-        // Move door state fields into payload array
-        const doorState = {
-          doorState: moduleData.doorState ?? null,
-          door1State: moduleData.door1State ?? null,
-          door2State: moduleData.door2State ?? null,
-        };
-
-        const suo = this.createSuo({
-          deviceId,
-          deviceType,
-          messageType: "DOOR_STATE",
-          messageId,
-          moduleIndex,
-          moduleId,
-          payload: [doorState],
-        });
-        eventBus.emitDataNormalized(suo);
-
-        // Update cache
-        const telemetry =
-          this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
-        telemetry.deviceId = deviceId;
-        telemetry.deviceType = deviceType;
-        telemetry.moduleIndex = moduleIndex;
-        telemetry.doorState = doorState.doorState;
-        telemetry.door1State = doorState.door1State;
-        telemetry.door2State = doorState.door2State;
-        telemetry.lastSeenDoor = new Date().toISOString();
-        this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
-        
-        // Log UOS door state
-        this.stateCache.getDoorState(deviceId, moduleIndex);
-      });
-    } else if (data && typeof data === "object" && !Array.isArray(data)) {
-      // V5008 style: object with top-level fields (moduleIndex, moduleId, doorState)
-      const { moduleIndex, moduleId, doorState, door1State, door2State } = data;
-
+    for (const { moduleIndex, moduleId, readings } of modules) {
       // Business logic validation: modAddr must be [1-5] and modId must not be 0
       if (moduleIndex < 1 || moduleIndex > 5 || moduleId === "0") {
         console.warn(
           `[UnifyNormalizer] Invalid door state data for device ${deviceId}: moduleIndex=${moduleIndex}, moduleId=${moduleId}. Skipping.`,
         );
-        return;
+        continue;
       }
 
-      // Move door state fields into payload array
+      // readings[0] contains door state fields
+      const reading = readings[0] || {};
       const doorStatePayload = {
-        doorState: doorState ?? null,
-        door1State: door1State ?? null,
-        door2State: door2State ?? null,
+        doorState: reading.doorState ?? null,
+        door1State: reading.door1State ?? null,
+        door2State: reading.door2State ?? null,
       };
 
       const suo = this.createSuo({
@@ -1213,117 +585,21 @@ class UnifyNormalizer {
       telemetry.door2State = doorStatePayload.door2State;
       telemetry.lastSeenDoor = new Date().toISOString();
       this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
-      
+
       // Log UOS door state
       this.stateCache.getDoorState(deviceId, moduleIndex);
-    } else if (moduleIndex !== undefined && moduleId !== undefined) {
-      // V5008 style: door state fields merged directly into SIF (no data object)
-      // Business logic validation: modAddr must be [1-5] and modId must not be 0
-      if (moduleIndex < 1 || moduleIndex > 5 || moduleId === "0") {
-        console.warn(
-          `[UnifyNormalizer] Invalid door state data for device ${deviceId}: moduleIndex=${moduleIndex}, moduleId=${moduleId}. Skipping.`,
-        );
-        return;
-      }
-
-      // Move door state fields into payload array
-      const doorStatePayload = {
-        doorState: doorState ?? null,
-        door1State: door1State ?? null,
-        door2State: door2State ?? null,
-      };
-
-      const suo = this.createSuo({
-        deviceId,
-        deviceType,
-        messageType: "DOOR_STATE",
-        messageId,
-        moduleIndex,
-        moduleId,
-        payload: [doorStatePayload],
-      });
-      eventBus.emitDataNormalized(suo);
-
-      // Update cache
-      const telemetry =
-        this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
-      telemetry.deviceId = deviceId;
-      telemetry.deviceType = deviceType;
-      telemetry.moduleIndex = moduleIndex;
-      telemetry.doorState = doorStatePayload.doorState;
-      telemetry.door1State = doorStatePayload.door1State;
-      telemetry.door2State = doorStatePayload.door2State;
-      telemetry.lastSeenDoor = new Date().toISOString();
-      this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
-      
-      // Log UOS door state
-      this.stateCache.getDoorState(deviceId, moduleIndex);
-    } else {
-      console.warn(
-        `[UnifyNormalizer] Invalid or missing door state data for device ${deviceId}`,
-      );
-      return;
     }
   }
 
   /**
    * Handle QRY_DOOR_STATE_RESP message
+   * Now uses same format as DOOR_STATE (unified)
    * @param {Object} sif - Standard Intermediate Format
    */
   handleDoorStateQuery(sif) {
-    const { deviceId, deviceType, messageId, data } = sif;
-
-    // QRY_DOOR_STATE_RESP has a different structure than DOOR_STATE
-    // It contains moduleIndex and moduleId at the top level of data
-    if (data && typeof data === "object" && !Array.isArray(data)) {
-      const { moduleIndex, moduleId, doorState, door1State, door2State } = data;
-
-      // Business logic validation: modAddr must be [1-5] and modId must not be 0
-      if (moduleIndex < 1 || moduleIndex > 5 || moduleId === "0") {
-        console.warn(
-          `[UnifyNormalizer] Invalid door state query response for device ${deviceId}: moduleIndex=${moduleIndex}, moduleId=${moduleId}. Skipping.`,
-        );
-        return;
-      }
-
-      // Move door state fields into payload array
-      const doorStatePayload = {
-        doorState: doorState ?? null,
-        door1State: door1State ?? null,
-        door2State: door2State ?? null,
-      };
-
-      const suo = this.createSuo({
-        deviceId,
-        deviceType,
-        messageType: "DOOR_STATE",
-        messageId,
-        moduleIndex,
-        moduleId,
-        payload: [doorStatePayload],
-      });
-      eventBus.emitDataNormalized(suo);
-
-      // Update cache
-      const telemetry =
-        this.stateCache.getTelemetry(deviceId, moduleIndex) || {};
-      telemetry.deviceId = deviceId;
-      telemetry.deviceType = deviceType;
-      telemetry.moduleIndex = moduleIndex;
-      telemetry.doorState = doorStatePayload.doorState;
-      telemetry.door1State = doorStatePayload.door1State;
-      telemetry.door2State = doorStatePayload.door2State;
-      telemetry.lastSeenDoor = new Date().toISOString();
-      this.stateCache.setTelemetry(deviceId, moduleIndex, telemetry);
-      
-      // Log UOS door state
-      this.stateCache.getDoorState(deviceId, moduleIndex);
-    } else {
-      console.warn(
-        `[UnifyNormalizer] Invalid or missing door state query response data for device ${deviceId}`,
-      );
-      return;
-    }
+    // QRY_DOOR_STATE_RESP now has same structure as DOOR_STATE
+    // Both use {data: [{moduleIndex, moduleId, doorState}]} format
+    this.handleDoorState(sif);
   }
 
   /**
